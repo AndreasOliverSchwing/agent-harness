@@ -1,0 +1,13 @@
+# Nothing site-specific belongs in this repo. These are here as a backstop.
+.env
+.env.*
+*.key
+*.pem
+secrets/
+**/cron/jobs.json
+**/config.yaml
+**/SOUL.md
+*.bak-*
+__pycache__/
+*.pyc
+.DS_Store

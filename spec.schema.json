@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/AndreasOliverSchwing/agent-harness/main/spec.schema.json",
+  "title": "agent-harness spec front matter",
+  "description": "The YAML front matter of a harness spec. Unknown keys are allowed on purpose — they serve as free documentation — but the linter warns about keys close to a known one, because a typo like max_age instead of max_age_h silently disables a check.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "harness": {
+      "type": "string",
+      "description": "Display name. Defaults to the spec filename stem."
+    },
+    "harness_compat": {
+      "type": "string",
+      "description": "Minimum linter version this spec needs, e.g. '>=0.2'. A spec written for a newer linter warns instead of being silently misread by an older one.",
+      "pattern": "^(>=|>|==)?\\s*\\d+\\.\\d+(\\.\\d+)?$"
+    },
+    "version": { "type": ["integer", "string"], "description": "The spec's own revision. Not interpreted." },
+    "artifact_glob": {
+      "type": "string",
+      "description": "Glob for the output to check. ~ and $VARS expand. The newest match by mtime is checked. Omit for an on-demand harness."
+    },
+    "golden": {
+      "type": "string",
+      "description": "Glob of known-good artifacts that must ALWAYS pass this spec. Checked in addition to the newest artifact, so a change to the spec or the linter that would break previously-good output fails in CI instead of on the next real run."
+    },
+    "cadence": { "type": "string", "description": "Documentation only." },
+    "optional": {
+      "type": "boolean",
+      "description": "When true a missing artifact warns rather than fails.",
+      "default": false
+    },
+    "max_age_h": {
+      "description": "Freshness limit in hours. Either a number (fail after N hours) or a two-tier ladder so a slightly late artifact warns before it fails.",
+      "oneOf": [
+        { "type": "number", "minimum": 0 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "warn_after": { "type": "number", "minimum": 0 },
+            "error_after": { "type": "number", "minimum": 0 }
+          },
+          "anyOf": [ { "required": ["warn_after"] }, { "required": ["error_after"] } ]
+        }
+      ]
+    },
+    "min_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Fail below this size. Keep it LOW: 'nothing happened this week' is a valid answer, and a floor that punishes an honest empty week teaches the producer to pad."
+    },
+    "required_sections": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Each must appear as a markdown heading (# to ####)."
+    },
+    "required_markers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Each must appear anywhere in the text. Use for footers and non-heading content."
+    },
+    "self_eval_min": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Minimum number of checkbox lines. Counts checked AND unchecked alike — an unchecked box is the system working."
+    },
+    "banned_patterns": {
+      "type": "array",
+      "description": "Regexes the artifact must not match. Evaluation is time-bounded; patterns are untrusted input.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pattern"],
+        "properties": {
+          "pattern": { "type": "string" },
+          "reason": { "type": "string", "description": "Shown with the failure. Write it so the producer knows what to do differently." }
+        }
+      }
+    }
+  }
+}

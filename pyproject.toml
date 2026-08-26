@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-harness"
+version = "0.2.0"
+description = "Mechanical spec contracts for recurring agent output. No LLM, no network."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+keywords = ["agents", "monitoring", "data-contracts", "liveness", "evaluation"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Monitoring",
+]
+# Deliberately no required dependencies: the linter must run on a fresh clone
+# with nothing installed. PyYAML and jsonschema are used when present and their
+# absence is a tested code path, not an untested fallback.
+dependencies = []
+
+[project.optional-dependencies]
+full = ["pyyaml>=5.1", "jsonschema>=4.0"]
+
+[project.scripts]
+harness-lint = "harness_lint:main"
+
+[tool.setuptools]
+py-modules = ["harness_lint"]

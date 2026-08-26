@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Both paths matter: the fallback front-matter parser is what runs on a
+        # fresh clone with no dependencies, and it is where a silently-dead check
+        # hid once already. Never test only the PyYAML path.
+        pyyaml: ["with-pyyaml", "without-pyyaml"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install optional dependencies
+        if: matrix.pyyaml == 'with-pyyaml'
+        run: pip install pyyaml jsonschema
+
+      # The runner's Python may ship PyYAML preinstalled. If it does, this leg
+      # silently tests the PyYAML path and the zero-dependency bugs this matrix
+      # exists to catch stay invisible — which is how a silently-disabled
+      # freshness check shipped once already. Prove the absence, do not assume it.
+      - name: Prove the optional dependencies are absent
+        if: matrix.pyyaml == 'without-pyyaml'
+        run: |
+          pip uninstall -y pyyaml jsonschema || true
+          python3 -c "import importlib.util as u, sys; p=[m for m in ('yaml','jsonschema') if u.find_spec(m)]; sys.exit('FAIL: '+', '.join(p)+' still importable - this leg would test the wrong path and hide zero-dependency bugs') if p else print('confirmed absent: yaml, jsonschema')"
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Lint the bundled specs (fresh-clone defaults)
+        run: python3 harness_lint.py --all --invariants
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history — a tree-only scan is the failure mode
+      - name: Secret scan (tree + history)
+        run: ./scripts/scan-secrets.sh
