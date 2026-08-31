@@ -4,6 +4,21 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
+## 0.2.1 — 2026-08-31
+
+### Fixed
+- The delivery invariant looked for positive-delivery fields (`delivered_at`,
+  `delivered`, …) that a real runner turned out never to write, so every healthy
+  job resolved to "unverified" and only a logged error could fail the check — a
+  failure-signal model wearing a dead-man's-switch label. Added
+  `HARNESS_ERRORS_CLEARED_ON_SUCCESS`, an explicit declaration that the runner
+  clears its error on success, which makes a clean recent run count as delivered.
+  A declaration rather than a default: assuming it silently is the false-green
+  this check exists to prevent. Verified against a live runner where a job that
+  had carried a delivery error showed clean fields after its next successful run
+  while a still-failing job on the same runner kept its error. Two tests pin both
+  readings, including that the declaration never masks a logged failure.
+
 ## 0.2.0 — 2026-08-26
 
 **The delivery invariant had the blind spot it was written to close.** It matched

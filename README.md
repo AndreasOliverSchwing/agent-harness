@@ -91,6 +91,14 @@ and fails on absence:
 | WARN | records exist but contain no enabled jobs |
 | WARN | the runner records no delivery evidence either way |
 
+Many job runners never write a positive "delivered" field — they only write an
+error and clear it on the next success. Left alone, this check then warns on every
+healthy job forever, which is alert fatigue wearing the costume of rigour. Setting
+`HARNESS_ERRORS_CLEARED_ON_SUCCESS=1` declares that behaviour so a clean recent run
+counts as delivered. It is a declaration and not a default because assuming it
+silently is precisely the false-green this check exists to prevent — and it never
+masks a logged failure.
+
 The two absence cases fail rather than pass on purpose. For a check whose whole
 job is "fail when the thing did not happen", finding nothing to look at and
 reporting success would be the same silent-green failure one level up.
@@ -129,6 +137,7 @@ first published version, and no test existed to notice.
 | `STATE_DIR` | root for `$STATE_DIR` references in specs | same as `ARTIFACTS_DIR` |
 | `HARNESS_JOBS_GLOB` | your job runner's run records, for the delivery invariant. Several globs may be joined with the OS path separator | unset (invariant skipped) |
 | `HARNESS_JOB_MAX_AGE_H` | dead-man's switch: fail when an enabled job has not run in this many hours | `0` (disabled) |
+| `HARNESS_ERRORS_CLEARED_ON_SUCCESS` | declare that your runner clears its error field on a successful run, so a clean recent run counts as delivered | unset (runs are reported unverified) |
 
 Two optional dependencies, both with tested absence paths: **PyYAML** (a built-in
 parser handles the front matter without it) and **jsonschema** (the near-miss key

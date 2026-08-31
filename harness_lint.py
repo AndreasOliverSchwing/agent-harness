@@ -27,7 +27,7 @@ import re
 import sys
 import time
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 SPECS_DIR = os.path.expanduser(os.environ.get(
     "HARNESS_SPECS_DIR",
@@ -443,6 +443,18 @@ DELIVERY_FAILURE = re.compile(
 DELIVERED_KEYS = ("delivered_at", "delivered", "last_delivery_at",
                   "last_delivered_at", "delivery_ok", "last_delivery_ok")
 
+# Some runners do not record positive delivery at all — they only write an error
+# field, and CLEAR it on the next successful run. For those, "ran recently and the
+# error fields are empty" IS positive evidence, and warning forever would be alert
+# fatigue dressed up as rigour. Declare it explicitly rather than assuming: an
+# unset value keeps the conservative "unverified" reading.
+#
+# Verified true for Hermes on 2026-08-31: a job that had carried a long delivery
+# error showed last_error=None and last_delivery_error=None after its next
+# successful run, while a still-failing job on the same runner kept its error.
+ERRORS_CLEARED_ON_SUCCESS = os.environ.get(
+    "HARNESS_ERRORS_CLEARED_ON_SUCCESS", "").strip().lower() in ("1", "true", "yes")
+
 # Dead-man's switch on each job: an enabled job whose newest run is older than
 # this fails. 0 disables it. Default 0 because the right value depends on your
 # cadences — set it to (longest cadence + grace).
@@ -563,7 +575,15 @@ def check_delivery():
             if evidence is False:
                 failures.append(f"{label}: ran, but the record shows no delivery")
             elif evidence is None:
-                warnings.append(f"{label}: runner records no delivery evidence")
+                if ERRORS_CLEARED_ON_SUCCESS:
+                    # blob was checked above and is clean, so on a runner that
+                    # clears its error on success this run did deliver.
+                    pass
+                else:
+                    warnings.append(
+                        f"{label}: runner records no delivery evidence "
+                        "(set HARNESS_ERRORS_CLEARED_ON_SUCCESS=1 if your runner "
+                        "clears its error field on a successful run)")
 
     if failures:
         return {"invariant": name, "status": "FAIL",

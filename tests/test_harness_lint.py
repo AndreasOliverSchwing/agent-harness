@@ -436,6 +436,35 @@ class TestDeliveryInvariant(unittest.TestCase):
         r = H.check_delivery()
         self.assertEqual(r["status"], "FAIL", "the second file's failure must be seen")
 
+    def test_clean_run_counts_as_delivered_only_when_declared(self):
+        # Some runners never write a positive delivery field and instead clear
+        # their error field on success. Warning forever on those is alert fatigue;
+        # assuming it silently would be the false-green this check exists to stop.
+        # So it is an explicit declaration, and both readings are pinned here.
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        job = {"id": "z", "enabled": True, "last_run_at": now}
+        old = H.ERRORS_CLEARED_ON_SUCCESS
+        try:
+            H.ERRORS_CLEARED_ON_SUCCESS = False
+            self.assertEqual(self.run_with(job)["status"], "WARN")
+            H.ERRORS_CLEARED_ON_SUCCESS = True
+            self.assertEqual(self.run_with(job)["status"], "PASS")
+        finally:
+            H.ERRORS_CLEARED_ON_SUCCESS = old
+
+    def test_declaration_never_masks_a_real_failure(self):
+        # The declaration must not turn a logged delivery failure green.
+        old = H.ERRORS_CLEARED_ON_SUCCESS
+        try:
+            H.ERRORS_CLEARED_ON_SUCCESS = True
+            r = self.run_with({"id": "y", "enabled": True,
+                               "last_run_at": "2026-08-30T02:27:40Z",
+                               "last_delivery_error": "Telegram send failed: Forbidden"})
+            self.assertEqual(r["status"], "FAIL")
+        finally:
+            H.ERRORS_CLEARED_ON_SUCCESS = old
+
     def test_skips_cleanly_when_unconfigured(self):
         H.JOBS_GLOB = ""
         self.assertEqual(H.check_delivery()["status"], "SKIP")
