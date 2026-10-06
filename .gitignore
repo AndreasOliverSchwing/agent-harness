@@ -11,3 +11,7 @@ secrets/
 __pycache__/
 *.pyc
 .DS_Store
+
+# added 2026-10-05 (development-folder cleanup, approved ignore rules)
+*.log
+*.pid
