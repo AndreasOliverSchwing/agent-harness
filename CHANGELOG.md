@@ -4,6 +4,19 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
+## Unreleased
+
+### Changed
+- `scripts/scan-secrets.sh`: the internal-vocabulary list (agent, tool and folder
+  names) no longer lives in the published script. A gate that lists the thing it
+  hides leaks it, which is the defect this gate was hardened against twice
+  already. Both private lists (personal names, internal vocabulary) now load from
+  files outside the repo; the repo carries only the mechanism and placeholder
+  templates (`scripts/scan-secrets-*.example`).
+- New `--generic` mode for CI, which cannot hold the private lists: it runs the
+  checks that need none and prints that the rest were not run, instead of a plain
+  "clean". The default mode still fails loudly when a list is missing.
+
 ## 0.2.1 — 2026-08-31
 
 ### Fixed

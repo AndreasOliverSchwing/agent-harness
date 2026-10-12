@@ -149,7 +149,11 @@ Defaults are chosen so a fresh clone runs green with no configuration; point
 `ARTIFACTS_DIR` at your own output directory for real use.
 
 Git does not ship hooks with a clone, so after cloning run
-`./scripts/install-hooks.sh` to wire the secret scan to `pre-push`. CI runs it too.
+`./scripts/install-hooks.sh` to wire the secret scan to `pre-push`. The scan needs
+two private lists that live outside the repo (templates:
+`scripts/scan-secrets-*.example`); without them it fails loudly rather than
+skipping those checks. CI runs the generic classes only (`--generic`) and says so
+in its output.
 
 PyYAML is used when present. Without it a small built-in parser handles the front
 matter — including the nested `banned_patterns` form. If any pattern cannot be

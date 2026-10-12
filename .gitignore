@@ -15,3 +15,10 @@ __pycache__/
 # added 2026-10-05 (development-folder cleanup, approved ignore rules)
 *.log
 *.pid
+
+# private scan lists belong in ~/.config/scan-secrets/, never in the repo
+# (scripts/scan-secrets-*.example are the templates)
+denylist
+internal-terms
+scripts/denylist
+scripts/internal-terms

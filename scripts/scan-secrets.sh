@@ -1,42 +1,56 @@
 #!/usr/bin/env bash
 # Publish gate. Non-zero exit means DO NOT PUBLISH.
 #
-# Default (no arguments): scans this repo's WORKING TREE and FULL GIT HISTORY,
-# which is what the pre-push hook wants. History matters more than the tree: a
-# secret committed once and deleted later leaves a clean tree and a leaky repo,
-# and a tree-only gate keeps saying "clean" forever after.
-#
-#   scan-secrets.sh                    # this repo, tree + history (pre-push)
+#   scan-secrets.sh                    # this repo, tree + full history (pre-push)
+#   scan-secrets.sh --generic          # same, minus the checks that need a private list (CI)
 #   scan-secrets.sh --path FILE|DIR    # any file or folder about to go public
 #   scan-secrets.sh --url URL          # a page that is ALREADY public
 #
-# The --path/--url modes exist because the gate is not repo-specific: a LinkedIn
-# post, a conference abstract, a landing page and a README all leak the same way.
-# Anything about to become public should pass this first.
+# Two private lists live OUTSIDE this repo (templates: scripts/scan-secrets-*.example):
+#   ~/.config/scan-secrets/denylist         names that are themselves sensitive
+#                                           (override the path with SCAN_DENYLIST)
+#   ~/.config/scan-secrets/internal-terms   internal system vocabulary: agent, tool and
+#                                           folder names (override with SCAN_INTERNAL_TERMS)
 #
-# Hardened 2026-08-26 after a review found this script reporting "clean" on a
-# tree that disclosed internal agent profile names, tool filenames and private
-# directory structure. None of those are credentials, but a gate that passes on
-# a tree it should have flagged is worse than no gate: it converts "unchecked"
-# into "verified". The identifier list must GROW over time — never shorten it.
+# History matters more than the tree: a secret committed once and deleted later
+# leaves a clean tree and a leaky repo, and a tree-only gate keeps saying "clean"
+# forever after. Default mode therefore scans the WORKING TREE and the FULL GIT HISTORY.
+#
+# The --path/--url modes exist because the gate is not repo-specific: a post, a
+# conference abstract, a landing page and a README all leak the same way. Anything
+# about to become public should pass this first.
+#
+# Hardened 2026-08-26 after a review found this script reporting "clean" on a tree
+# that disclosed internal system vocabulary: agent profile names, tool filenames and
+# private directory structure. None of those are credentials, but a gate that passes
+# on a tree it should have flagged is worse than no gate: it converts "unchecked"
+# into "verified". The list of things to look for must GROW over time — never shorten it.
 #
 # Hardened 2026-09-05 after a second, sharper version of the same defect: the
-# personal-identifier check was implemented as a literal list of family first
-# names INSIDE this script — and this script is published. The gate was leaking
-# the exact names it existed to protect, on the public internet, in the file
-# whose job was to stop that. Names now live in a local, git-ignored denylist
-# (see PRIVATE_TERMS below); the published script carries only the mechanism.
+# personal-name check was implemented as a literal list of names INSIDE this script
+# — and this script is published. The gate was leaking the exact names it existed to
+# protect, in the file whose job was to stop that. Names now live in a local list.
 #
-# The general lesson, worth stating because it will recur: a denylist gate has
-# to hold the secret it is matching on. Never let that gate be a public file.
+# Hardened 2026-10-12 for the same reason, one class further: the internal-vocabulary
+# check still carried its own literal list (agent, tool and folder names). That list
+# moved to the second local list as well. This file carries only the mechanism.
+#
+# The general lesson, worth stating because it will recur: a denylist gate has to
+# hold the secret it is matching on. Never let that gate be a public file.
+#
+# Why --generic exists: CI cannot hold the private lists, and a gate that hard-fails
+# there is a gate that is always red, which everyone learns to ignore. So CI runs the
+# generic classes and says out loud that the rest did not run. A run that skipped
+# checks never prints a plain "clean".
 set -uo pipefail
 
-MODE="repo"; TARGET=""
+MODE="repo"; TARGET=""; GENERIC=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --path) MODE="path"; TARGET="${2:-}"; shift 2 ;;
-    --url)  MODE="url";  TARGET="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --path) MODE="path"; TARGET="${2:-}"; shift $(( $# >= 2 ? 2 : 1 )) ;;
+    --url)  MODE="url";  TARGET="${2:-}"; shift $(( $# >= 2 ? 2 : 1 )) ;;
+    --generic) GENERIC=1; shift ;;
+    -h|--help) sed -n '2,/^# History matters/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -48,26 +62,46 @@ TMPDIR_SCAN=""
 cleanup () { [ -n "$TMPDIR_SCAN" ] && rm -rf "$TMPDIR_SCAN"; }
 trap cleanup EXIT
 
-# ── the private denylist ───────────────────────────────────────────────────
-# Terms that are themselves sensitive: family first names, customer names, any
-# internal codename. One extended-regex fragment per line, '#' comments and
-# blanks ignored; they are OR-ed into a single pattern.
+# ── the private lists ──────────────────────────────────────────────────────
+# One extended-regex fragment per line, '#' comments and blanks ignored; the
+# fragments are OR-ed into a single pattern.
+#   denylist       terms that are themselves sensitive: personal names, customer
+#                  names, any internal codename.
+#   internal-terms internal system vocabulary that must not appear in anything
+#                  public: agent/profile names, tool and script names, the names
+#                  of private folders.
 #
-# A MISSING denylist is a hard failure, not a warning. Its absence silently
-# deletes a whole check class, which is the "unchecked becomes verified" failure
-# this gate has now made twice. It fails loud, it is a one-line fix, and it
-# clears itself — so it never becomes an always-red gate that everyone ignores.
+# A MISSING list is a hard failure, not a warning. Its absence silently deletes a
+# whole check class, which is the "unchecked becomes verified" failure this gate
+# has now made twice. It fails loud, it is a one-line fix, and it clears itself,
+# so it never becomes an always-red gate that everyone ignores. The one
+# deliberate way around it is --generic, which says so in its output.
 DENYLIST="${SCAN_DENYLIST:-$HOME/.config/scan-secrets/denylist}"
+INTERNAL_LIST="${SCAN_INTERNAL_TERMS:-$HOME/.config/scan-secrets/internal-terms}"
+load_list () { [ -f "$1" ] && grep -vE '^\s*(#|$)' "$1" | paste -sd'|' - ; }
 PRIVATE_TERMS=""
-if [ -f "$DENYLIST" ]; then
-  PRIVATE_TERMS=$(grep -vE '^\s*(#|$)' "$DENYLIST" | paste -sd'|' -)
-fi
-if [ -z "$PRIVATE_TERMS" ]; then
-  echo "✗ no denylist at $DENYLIST (or it is empty)."
-  echo "  The personal/customer-name check cannot run without it, and a gate"
-  echo "  that silently drops a check is worse than no gate. Create the file"
-  echo "  (one regex fragment per line, chmod 600) or set SCAN_DENYLIST."
-  exit 1
+INTERNAL_TERMS=""
+if [ "$GENERIC" -eq 1 ]; then
+  echo "generic mode: the denylist and internal-terms checks are SKIPPED (they need the private local lists)"
+else
+  PRIVATE_TERMS=$(load_list "$DENYLIST")
+  INTERNAL_TERMS=$(load_list "$INTERNAL_LIST")
+  missing=0
+  if [ -z "$PRIVATE_TERMS" ]; then
+    echo "✗ no denylist at $DENYLIST (or it is empty)."; missing=1
+  fi
+  if [ -z "$INTERNAL_TERMS" ]; then
+    echo "✗ no internal-terms list at $INTERNAL_LIST (or it is empty)."; missing=1
+  fi
+  if [ "$missing" -eq 1 ]; then
+    echo "  The personal-name and internal-vocabulary checks cannot run without their"
+    echo "  lists, and a gate that silently drops a check is worse than no gate."
+    echo "  Create the files (templates: scripts/scan-secrets-denylist.example and"
+    echo "  scripts/scan-secrets-internal-terms.example; chmod 600), point SCAN_DENYLIST /"
+    echo "  SCAN_INTERNAL_TERMS at them, or run with --generic to skip these two checks"
+    echo "  knowingly."
+    exit 1
+  fi
 fi
 
 # ── target selection ───────────────────────────────────────────────────────
@@ -116,33 +150,35 @@ check "JWT"                   'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.'
 check "private IP"            '\b(10|100|127)\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b|\b192\.168\.[0-9]{1,3}\.[0-9]{1,3}\b|\b172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}\b'
 check "internal hostname"     '\.ts\.net\b|\.local\b|\.internal\b|tailscale'
 check "absolute home path"    '/Users/|/home/[a-z]'
-# Case-insensitive, because a name is written "Alex" in prose and
-# "alex" in a denylist. The 2026-08-26 version matched case-sensitively
-# and would have missed every real occurrence — a check that only catches the
-# lowercase spelling of a proper noun catches nothing.
-check "private term (denylist)" "\\b($PRIVATE_TERMS)\\b" "-i"
-# Internal system vocabulary. This is the class the first version of this script
-# missed entirely — profile names, tool filenames, private directory structure.
-# (internal agent-name check: terms live in a private local list, not in this file)
-# (internal tooling check: terms live in a private local list, not in this file)
-# (private folder check: terms live in a private local list, not in this file)
 check "possible channel id"   '(^|[^0-9v.])[0-9]{9,10}([^0-9.]|$)'
-# ── discretion posture (added 2026-09-05) ──────────────────────────────────
-# Publishing about the work is fine and deliberate; publishing that you are
-# LOOKING is not. A current employer reads the same page a hiring manager does,
-# and the two signals are separable: "here is what I know" is reputation, "here
-# is what I want" is availability. Only the second one costs anything.
+# Availability signals and compensation figures are personal and situational,
+# not part of the work. Keep them off public pages.
 check "availability signal"   'open.?to.?work|seeking (a )?(new|next) (role|opportunity|challenge)|looking for (my|a) next|actively (interviewing|looking|job)|available for hire|open to (new )?opportunities|relocating to the (united states|us|usa)\b' "-i"
-# Comp belongs in a negotiation, never on a public page — it anchors every
-# future conversation against you and tells your employer what you think you
-# are worth elsewhere.
 check "compensation figure"   '(salary|compensation|base pay|total comp|package)[^.]{0,50}([€$£][[:space:]]?[0-9]|(eur|usd|chf)[[:space:]]?[0-9]|[0-9]{2,3}[[:space:]]?k\b)' "-i"
 
+# ── the checks that need a private list ────────────────────────────────────
+if [ "$GENERIC" -eq 0 ]; then
+  # Case-insensitive, because a name is written "Alex" in prose and "alex" in a
+  # denylist. The 2026-08-26 version matched case-sensitively and would have
+  # missed every real occurrence — a check that only catches the lowercase
+  # spelling of a proper noun catches nothing.
+  check "private term (denylist)" "\\b($PRIVATE_TERMS)\\b" "-i"
+  # Internal system vocabulary is the class the first version of this script
+  # missed entirely. Its list is private for the same reason the name list is:
+  # written out here, it would disclose exactly what it is meant to hide.
+  # Case-sensitive on purpose: these are identifiers, not prose.
+  check "internal vocabulary (local list)" "\\b($INTERNAL_TERMS)\\b"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  case "$MODE" in
-    repo) echo "✓ clean (tree + full history) — safe to push" ;;
-    *)    echo "✓ clean — safe to publish" ;;
-  esac
+  if [ "$GENERIC" -eq 1 ]; then
+    echo "✓ generic checks clean — the private-list checks (denylist, internal terms) were NOT run, so this is not a full verification"
+  else
+    case "$MODE" in
+      repo) echo "✓ clean (tree + full history) — safe to push" ;;
+      *)    echo "✓ clean — safe to publish" ;;
+    esac
+  fi
 else
   echo; echo "✗ DO NOT PUBLISH"
 fi

@@ -44,5 +44,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — a tree-only scan is the failure mode
-      - name: Secret scan (tree + history)
-        run: ./scripts/scan-secrets.sh
+      # CI cannot hold the private lists (they live on the owner's machine, never in
+      # the repo), so it runs the generic classes and says so. The full gate, with
+      # the personal-name and internal-vocabulary checks, is the owner's pre-push hook.
+      - name: Secret scan (generic classes, tree + history)
+        run: ./scripts/scan-secrets.sh --generic
