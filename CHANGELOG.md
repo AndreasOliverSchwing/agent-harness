@@ -4,7 +4,33 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
-## Unreleased
+## 0.3.0 — 2026-10-25
+
+**A well-formed artifact can still hold data the source never said.** The linter
+checks that an artifact meets its contract. It cannot check that the values inside
+it are true. This release adds that second half as a library: `harness_grounding.py`
+compares an extraction against the source text it came from and reports every value
+the source does not support.
+
+### Added
+- `harness_grounding.py` — six checks, standard library only, no model and no
+  network: `UNGROUNDED_ID`, `MISSING_GTIN`, `REDACTED_LINK`, `UNCOVERED_LINK`,
+  `SET_MULTIPLIED`, `VARIANT_SPLIT`. `ground()` returns a deep copy plus findings
+  and never mutates its input. It never deletes an item without a finding and never
+  rewrites a value into something the source does not prove: an unsupported part
+  number is flagged and marked `uncertain`, not repaired, because the source does
+  not say what the right value is.
+- `bench/grounding/` — 30 synthetic order requests across the six error types plus
+  four error-free controls, a scoring runner and a generated `RESULTS.md`. Measured:
+  30 of 30 injected errors caught, 0 of 4 false alarms, 14 of 30 corrected to gold.
+  The 16 uncorrected cases cannot reach gold by design (`UNGROUNDED_ID` flags
+  instead of repairing; `UNCOVERED_LINK` appends a placeholder). The benchmark
+  reports; it does not gate CI.
+- `examples/grounding_example.py` — one invented order request, three findings,
+  runnable with no configuration.
+- README section on the grounding checks, with the six checks, the synthetic
+  numbers and the limits; `SPEC-REFERENCE.md` states that grounding is a library
+  called from a producer and deliberately not a spec key.
 
 ### Changed
 - `scripts/scan-secrets.sh`: the internal-vocabulary list (agent, tool and folder
@@ -16,6 +42,8 @@ working as aliases for one major version rather than disappearing.
 - New `--generic` mode for CI, which cannot hold the private lists: it runs the
   checks that need none and prints that the rest were not run, instead of a plain
   "clean". The default mode still fails loudly when a list is missing.
+- `harness_grounding` is packaged (`py-modules`), so an installed release carries
+  the module the README documents.
 
 ## 0.2.1 — 2026-08-31
 

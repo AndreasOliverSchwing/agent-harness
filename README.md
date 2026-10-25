@@ -110,12 +110,114 @@ ignored exactly like one that is always green.
 A good invariant **reproduces a known failure before you trust it.** If it cannot go
 red against the incident that motivated it, it is not evidence — it is decoration.
 
+## Grounding checks — is the data inside the artifact true to its source?
+
+The linter answers one question: **does this artifact meet its contract?**
+`harness_grounding.py` answers the next one: **is the data inside it true to the
+text it came from?**
+
+These are different questions, and the gap between them is where the quiet
+failures live. An extractor reads a supplier mail and returns items. The result
+can be well-formed, complete, on time, and pass every lint check — and still hold
+a part number that no source line contains. **Lint checks shape. Grounding checks
+truth.**
+
+The module is a library, not a linter mode. Call `ground()` in the producer after
+extraction. It returns a checked copy and a list of findings. It never mutates the
+input, never calls a model, never opens a socket.
+
+```python
+import harness_grounding as g
+
+source = """Example Tool Supply - order request
+Cordless impact driver 18 V, part AC-4417, GTIN 4006381333931
+quantity: 3 x 4
+"""
+
+extraction = {"items": [{
+    "quantity": 12,
+    "unit": "piece",
+    "description": "Cordless impact driver 18 V 4-pack",
+    "part_number": "AC-9999",
+}]}
+
+checked, findings = g.ground(extraction, source)
+for finding in findings:
+    print(finding["code"], finding["action"], finding["value"])
+```
+
+That extraction is well-formed and wrong in three ways. It prints
+`UNGROUNDED_ID flagged AC-9999`, `SET_MULTIPLIED corrected 12` and
+`MISSING_GTIN attached 4006381333931`. The full runnable version is
+`python3 examples/grounding_example.py`.
+
+### The six checks
+
+| Code | What it catches | What it does |
+|---|---|---|
+| `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text | flags it, sets `uncertain: true`, keeps the item and the value |
+| `MISSING_GTIN` | a valid GTIN in the source that no item carries | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
+| `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link from the source text |
+| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, `uncertain: true` |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4 | sets quantity 3, unit `set`, `uncertain: true` |
+| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note, reports `merged` |
+
+**Every change is reported. Nothing is deleted or rewritten silently.** The
+module never drops an item without a finding, and never rewrites a value into
+something the source does not prove — an unsupported part number is flagged, not
+repaired, because the source does not say what the right value is.
+`VARIANT_SPLIT` is the only check that removes an item; it reports `merged` and
+keeps the part number, the link and the variant label on the surviving item.
+
+### Synthetic benchmark
+
+`bench/grounding/` holds 30 invented order requests: six error types, four to six
+cases each, plus four error-free controls. `python3 bench/grounding/run.py` scores
+them and rewrites `RESULTS.md`.
+
+| error type | n | caught | corrected |
+|---|---|---|---|
+| `variant_split` | 4 | 4 | 4 |
+| `invented_part_number` | 6 | 6 | 0 |
+| `missed_link` | 6 | 6 | 0 |
+| `set_multiplied` | 4 | 4 | 4 |
+| `omit_gtin` | 6 | 6 | 6 |
+| clean (control) | 4 | — | 4 |
+
+**These numbers are synthetic.** A person wrote the cases to exercise the checks,
+and injected the errors by design. Read them as "the checks fire on the error they
+name", not as a recall rate on real extractor output.
+
+- 30 of 30 injected errors produced a finding with the expected code.
+- 0 of 4 error-free cases produced any finding.
+- 14 of 30 reached the gold extraction exactly. The other 16 cannot, by design:
+  `UNGROUNDED_ID` flags instead of repairing, and `UNCOVERED_LINK` appends a
+  placeholder instead of restoring the link on the existing item.
+
+### Limits
+
+- **The checks prove absence, not truth.** A value that occurs in the source can
+  still be attached to the wrong item.
+- `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.
+- `UNCOVERED_LINK` appends a second item when the position exists but lost its
+  link. Treat the pair as one position; it is a prompt to look, not a merge.
+- A 12-digit marketplace item number with a valid GS1 check digit is read as a
+  GTIN-12. Nothing in the text distinguishes the two.
+- The GTIN-to-item match uses word overlap on the description. A short or generic
+  description ("Set", "Artikel") can miss, and the finding then carries no item.
+- Quantity words are English and German only (`x`, `pcs`, `Stück`, `Menge`, …).
+- The checks are mechanical pattern matches. They are deterministic on purpose: a
+  grounding check that needs a model fails exactly when the extraction is least
+  trustworthy.
+
 ## Layout
 
 ```
 harness_lint.py     the checker — no LLM, no network, seconds to run
+harness_grounding.py  the grounding checks — is the data true to its source?
 specs/              example specs, genericised from a private system
-examples/           conforming artifacts, so a fresh clone runs green
+examples/           conforming artifacts, plus a runnable grounding example
+bench/grounding/    30 synthetic cases and the scoring runner behind RESULTS.md
 tests/              unittest suite — run with: python3 -m unittest discover -s tests
 scripts/            secret scan (tree + full history) + hook installer
 SPEC-REFERENCE.md   every front-matter key and what it does

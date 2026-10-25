@@ -90,6 +90,25 @@ single spec, which is how you check a specific file before it ships.
 Exit code is the number of failing harnesses plus failing invariants, capped at
 125. Zero means everything checked passed.
 
+## Grounding is not a spec key
+
+`harness_grounding.py` is a library that a producer calls. It is not a front-matter
+key, and none is planned. Add no key for it.
+
+The linter reads an artifact that already exists on disk. A grounding check needs two
+things the linter does not have: the extraction and the source text it came from. A
+spec key would have to name both files, and it still could not say which item came
+from which source line. Keep the call in the producer, where both are in hand.
+
+```python
+import harness_grounding as g
+checked, findings = g.ground(extraction, source_text)
+```
+
+A producer that wants to gate its own output blocks on an item with `uncertain: true`,
+or on a finding with action `flagged` or `reported`. Those two are the ones the module
+cannot resolve on its own. The gating policy belongs to the producer, not to the spec.
+
 ## Trust boundary
 
 Specs are executable input: globs are expanded and read, patterns are compiled as
