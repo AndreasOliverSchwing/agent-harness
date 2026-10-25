@@ -1,0 +1,919 @@
+[
+  {
+    "id": "gtin-01",
+    "error_type": "omit_gtin",
+    "source_text": "Acme Tools - order request\nCordless drill driver 18 V, part AC-4417, GTIN 4000000000006\nquantity: 4\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 4,
+          "unit": "piece",
+          "description": "Cordless drill driver 18 V",
+          "part_number": "AC-4417",
+          "gtin": "4000000000006"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 4,
+          "unit": "piece",
+          "description": "Cordless drill driver 18 V",
+          "part_number": "AC-4417"
+        }
+      ]
+    }
+  },
+  {
+    "id": "gtin-02",
+    "error_type": "omit_gtin",
+    "source_text": "Northwind Supply - order request\n1. Hex bolt M8 zinc plated, part NW-1104, quantity 40\n2. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 4000000000013\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "NW-1104"
+        },
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201",
+          "gtin": "4000000000013"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "NW-1104"
+        },
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201"
+        }
+      ]
+    }
+  },
+  {
+    "id": "gtin-03",
+    "error_type": "omit_gtin",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781\nGTIN 4000000000020\nquantity: 6\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781",
+          "gtin": "4000000000020"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        }
+      ]
+    }
+  },
+  {
+    "id": "gtin-04",
+    "error_type": "omit_gtin",
+    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 4000000000037\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520",
+          "gtin": "4000000000037"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    }
+  },
+  {
+    "id": "gtin-05",
+    "error_type": "omit_gtin",
+    "source_text": "Northwind Supply - order request\n1. Safety gloves size 10, part NW-3301, quantity 20\n2. Safety goggles clear, part NW-3302, quantity 15, GTIN 4000000000044\n3. Ear defenders, part NW-3303, quantity 12\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 20,
+          "unit": "piece",
+          "description": "Safety gloves size 10",
+          "part_number": "NW-3301"
+        },
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302",
+          "gtin": "4000000000044"
+        },
+        {
+          "quantity": 12,
+          "unit": "piece",
+          "description": "Ear defenders",
+          "part_number": "NW-3303"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 20,
+          "unit": "piece",
+          "description": "Safety gloves size 10",
+          "part_number": "NW-3301"
+        },
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302"
+        },
+        {
+          "quantity": 12,
+          "unit": "piece",
+          "description": "Ear defenders",
+          "part_number": "NW-3303"
+        }
+      ]
+    }
+  },
+  {
+    "id": "gtin-06",
+    "error_type": "omit_gtin",
+    "source_text": "Blue Harbor Electrical - order request\nCable tie 200 mm black, part BH-9902, GTIN 40123455\nquantity: 500\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 500,
+          "unit": "piece",
+          "description": "Cable tie 200 mm black",
+          "part_number": "BH-9902",
+          "gtin": "40123455"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 500,
+          "unit": "piece",
+          "description": "Cable tie 200 mm black",
+          "part_number": "BH-9902"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-01",
+    "error_type": "invented_part_number",
+    "source_text": "Acme Tools - order request\n1 x Hex bolt M8 zinc plated, part AC-4417\nquantity: 40\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "AC-4417"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "AC-4418"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-02",
+    "error_type": "invented_part_number",
+    "source_text": "Northwind Supply - order request\n1. Washer 12 mm stainless, part NW-2201, quantity 100\n2. Hex nut M8, part NW-2202, quantity 200\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201"
+        },
+        {
+          "quantity": 200,
+          "unit": "piece",
+          "description": "Hex nut M8",
+          "part_number": "NW-2202"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201"
+        },
+        {
+          "quantity": 200,
+          "unit": "piece",
+          "description": "Hex nut M8",
+          "part_number": "NW-2209"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-03",
+    "error_type": "invented_part_number",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781\nquantity: 6\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7782"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-04",
+    "error_type": "invented_part_number",
+    "source_text": "Acme Tools - order request\n1 x Angle grinder 125 mm, part AC-5520\nquantity: 2\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-05",
+    "error_type": "invented_part_number",
+    "source_text": "Northwind Supply - order request\n1. Safety goggles clear, part NW-3302, quantity 15\n2. Safety gloves size 10, part NW-3301, quantity 20\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302"
+        },
+        {
+          "quantity": 20,
+          "unit": "piece",
+          "description": "Safety gloves size 10",
+          "part_number": "NW-3301"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302"
+        },
+        {
+          "quantity": 20,
+          "unit": "piece",
+          "description": "Safety gloves size 10",
+          "part_number": "NW-3300"
+        }
+      ]
+    }
+  },
+  {
+    "id": "part-06",
+    "error_type": "invented_part_number",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Cable gland PG13, part BH-5510\nquantity: 30\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 30,
+          "unit": "piece",
+          "description": "Cable gland PG13",
+          "part_number": "BH-5510"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 30,
+          "unit": "piece",
+          "description": "Cable gland PG13",
+          "part_number": "BH-5510-GY"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-01",
+    "error_type": "missed_link",
+    "source_text": "Northwind Supply - order request\n1 x Safety goggles clear, part NW-3302\n4 x https://www.amazon.com/dp/B0ACM10001\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302"
+        },
+        {
+          "quantity": 4,
+          "link": "https://www.amazon.com/dp/B0ACM10001"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "NW-3302"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-02",
+    "error_type": "missed_link",
+    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2\n   https://www.amazon.de/dp/B0ACM10002\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520",
+          "link": "https://www.amazon.de/dp/B0ACM10002"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-03",
+    "error_type": "missed_link",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781, quantity 6\n2 x https://www.ebay.de/itm/223344556677\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        },
+        {
+          "quantity": 2,
+          "link": "https://www.ebay.de/itm/223344556677"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-04",
+    "error_type": "missed_link",
+    "source_text": "Acme Tools - order request\n1 x Cutting disc 125 mm, part AC-5521\n10 x https://de.aliexpress.com/item/1005001234567\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        },
+        {
+          "quantity": 10,
+          "link": "https://de.aliexpress.com/item/1005001234567"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-05",
+    "error_type": "missed_link",
+    "source_text": "Northwind Supply - order request\n1 x Ear defenders, part NW-3303\n2 x https://www.amazon.de/dp/B0ACM10005\n3 x https://www.amazon.de/dp/B0ACM10006\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Ear defenders",
+          "part_number": "NW-3303"
+        },
+        {
+          "quantity": 2,
+          "link": "https://www.amazon.de/dp/B0ACM10005"
+        },
+        {
+          "quantity": 3,
+          "link": "https://www.amazon.de/dp/B0ACM10006"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Ear defenders",
+          "part_number": "NW-3303"
+        }
+      ]
+    }
+  },
+  {
+    "id": "link-06",
+    "error_type": "missed_link",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781\n6\nhttps://www.ebay.de/itm/223344556678\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        },
+        {
+          "quantity": 6,
+          "link": "https://www.ebay.de/itm/223344556678"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 1,
+          "unit": "piece",
+          "description": "Junction box IP65",
+          "part_number": "BH-7781"
+        }
+      ]
+    }
+  },
+  {
+    "id": "set-01",
+    "error_type": "set_multiplied",
+    "source_text": "Acme Tools - order request\nHex bolt M8, 5-pack, part AC-6601\nquantity: 28 x 5\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 28,
+          "unit": "set",
+          "description": "Hex bolt M8, 5-pack",
+          "part_number": "AC-6601"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 140,
+          "unit": "piece",
+          "description": "Hex bolt M8, 5-pack",
+          "part_number": "AC-6601"
+        }
+      ]
+    }
+  },
+  {
+    "id": "set-02",
+    "error_type": "set_multiplied",
+    "source_text": "Northwind Supply - order request\nWasher 12 mm stainless, pack of 10, part NW-2201\nquantity: 3 x 10\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 3,
+          "unit": "set",
+          "description": "Washer 12 mm stainless, pack of 10",
+          "part_number": "NW-2201"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 30,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless, pack of 10",
+          "part_number": "NW-2201"
+        }
+      ]
+    }
+  },
+  {
+    "id": "set-03",
+    "error_type": "set_multiplied",
+    "source_text": "Blue Harbor Electrical - order request\nCable gland PG13, set of 4, part BH-5510\nquantity: 12 x 4\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 12,
+          "unit": "set",
+          "description": "Cable gland PG13, set of 4",
+          "part_number": "BH-5510"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 48,
+          "unit": "piece",
+          "description": "Cable gland PG13, set of 4",
+          "part_number": "BH-5510"
+        }
+      ]
+    }
+  },
+  {
+    "id": "set-04",
+    "error_type": "set_multiplied",
+    "source_text": "Acme Tools - order request\nCutting disc 125 mm, 6er, part AC-5521\nquantity: 7 x 6\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 7,
+          "unit": "set",
+          "description": "Cutting disc 125 mm, 6er",
+          "part_number": "AC-5521"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 42,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm, 6er",
+          "part_number": "AC-5521"
+        }
+      ]
+    }
+  },
+  {
+    "id": "variant-01",
+    "error_type": "variant_split",
+    "source_text": "Blue Harbor Electrical - order request\n2 x Cable gland PG13, part BH-5510, colours grey and black\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Cable gland PG13 grey",
+          "part_number": "BH-5510"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Cable gland PG13 grey",
+          "part_number": "BH-5510"
+        },
+        {
+          "description": "Cable gland PG13 black",
+          "part_number": "BH-5510"
+        }
+      ]
+    }
+  },
+  {
+    "id": "variant-02",
+    "error_type": "variant_split",
+    "source_text": "Acme Tools - order request\n4 x Safety goggles clear, part AC-7701, lens clear or tinted\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 4,
+          "unit": "piece",
+          "description": "Safety goggles clear lens",
+          "part_number": "AC-7701"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 4,
+          "unit": "piece",
+          "description": "Safety goggles clear lens",
+          "part_number": "AC-7701"
+        },
+        {
+          "description": "Safety goggles tinted lens",
+          "part_number": "AC-7701"
+        }
+      ]
+    }
+  },
+  {
+    "id": "variant-03",
+    "error_type": "variant_split",
+    "source_text": "Northwind Supply - order request\n6 x Hex nut M8, part NW-2202, finishes plain, zinc and brass\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Hex nut M8 plain",
+          "part_number": "NW-2202"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 6,
+          "unit": "piece",
+          "description": "Hex nut M8 plain",
+          "part_number": "NW-2202"
+        },
+        {
+          "description": "Hex nut M8 zinc",
+          "part_number": "NW-2202"
+        },
+        {
+          "description": "Hex nut M8 brass",
+          "part_number": "NW-2202"
+        }
+      ]
+    }
+  },
+  {
+    "id": "variant-04",
+    "error_type": "variant_split",
+    "source_text": "Blue Harbor Electrical - order request\n3 x Junction box IP65, part BH-7781, sizes 100 mm and 150 mm\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 3,
+          "unit": "piece",
+          "description": "Junction box IP65 100 mm",
+          "part_number": "BH-7781"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 3,
+          "unit": "piece",
+          "description": "Junction box IP65 100 mm",
+          "part_number": "BH-7781"
+        },
+        {
+          "description": "Junction box IP65 150 mm",
+          "part_number": "BH-7781"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clean-01",
+    "error_type": "clean",
+    "source_text": "Acme Tools - order request\n1. Hex bolt M8 zinc plated, part AC-4417, quantity 40\n2. Hex nut M8, part AC-4419, quantity 40\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "AC-4417"
+        },
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex nut M8",
+          "part_number": "AC-4419"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex bolt M8 zinc plated",
+          "part_number": "AC-4417"
+        },
+        {
+          "quantity": 40,
+          "unit": "piece",
+          "description": "Hex nut M8",
+          "part_number": "AC-4419"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clean-02",
+    "error_type": "clean",
+    "source_text": "Northwind Supply - order request\n1. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 4000000000051\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201",
+          "gtin": "4000000000051"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 100,
+          "unit": "piece",
+          "description": "Washer 12 mm stainless",
+          "part_number": "NW-2201",
+          "gtin": "4000000000051"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clean-03",
+    "error_type": "clean",
+    "source_text": "Blue Harbor Electrical - order request\n1. Safety goggles clear, part BH-3302, quantity 15\n   https://www.amazon.de/dp/B0ACM10009\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "BH-3302",
+          "link": "https://www.amazon.de/dp/B0ACM10009"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 15,
+          "unit": "piece",
+          "description": "Safety goggles clear",
+          "part_number": "BH-3302",
+          "link": "https://www.amazon.de/dp/B0ACM10009"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clean-04",
+    "error_type": "clean",
+    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 4000000000068\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n   https://www.ebay.de/itm/223344556680\n",
+    "gold": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520",
+          "gtin": "4000000000068"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521",
+          "link": "https://www.ebay.de/itm/223344556680"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "quantity": 2,
+          "unit": "piece",
+          "description": "Angle grinder 125 mm",
+          "part_number": "AC-5520",
+          "gtin": "4000000000068"
+        },
+        {
+          "quantity": 25,
+          "unit": "piece",
+          "description": "Cutting disc 125 mm",
+          "part_number": "AC-5521",
+          "link": "https://www.ebay.de/itm/223344556680"
+        }
+      ]
+    }
+  }
+]
