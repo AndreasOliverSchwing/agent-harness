@@ -2,13 +2,18 @@
 
 Every fixture here is invented: "Acme Tools" and "Northwind Supply" are made-up
 suppliers, and every GTIN passes or fails the GS1 check digit by construction.
-No real customer text, no real product data.
+No real customer text, no real product data. The marketplace ids are invented
+too, and they are chosen so that they are not valid GTINs: a 12-digit item
+number with a valid check digit would be picked up as a GTIN and would blur the
+check under test.
 
 The tests are split by contract, not by function name:
   - the check-digit rule, on all four GS1 lengths;
   - find_gtins, which must skip what is not a standalone valid GTIN;
   - normalize_id, which decides when two ids are the same id;
-  - the two ground() checks, positive and negative;
+  - find_links and product_link_id, the link model;
+  - the two identifier checks, positive and negative;
+  - the four link, quantity and variant checks, positive and negative;
   - the ground() contract: deep copy, no mutation, missing keys tolerated.
 
     python3 -m unittest discover -s tests -v
@@ -40,6 +45,28 @@ Northwind Supply - order confirmation
 ONE_GTIN_SOURCE = """\
 Northwind Supply - order confirmation
 4 x Widget assembly  GTIN 4006381333931
+"""
+
+# Invented marketplace links. The eBay and AliExpress ids are 12 and 13 digits
+# long and are not valid GTINs, so no GTIN check fires on them by accident.
+AMAZON_LINK = "https://www.amazon.de/dp/B0TEST1234"
+EBAY_LINK = "https://www.ebay.de/itm/123456789001"
+ALIEXPRESS_LINK = "https://de.aliexpress.com/item/1005001234567"
+
+# Two product links, the quantity written the two ways a supplier writes it:
+# on the same line ("4x <link>") and on the line above ("2" alone).
+LINK_SOURCE = """\
+Acme Tools - order confirmation
+4x https://www.amazon.de/dp/B0TEST1234
+2
+https://www.ebay.de/itm/123456789001
+"""
+
+# A set order: 28 sets of 5. The item below is an M-pack, so 140 is wrong.
+SET_SOURCE = """\
+Acme Tools - order confirmation
+quantity: 28 x 5
+Hex bolt set, 5-pack, part AC-4417
 """
 
 
@@ -285,6 +312,299 @@ class GroundContractTest(unittest.TestCase):
                              {"code", "item_index", "value", "evidence",
                               "action"})
             self.assertIsInstance(finding["code"], str)
+            self.assertIsInstance(finding["value"], str)
+            self.assertIsInstance(finding["evidence"], str)
+            self.assertIsInstance(finding["action"], str)
+            self.assertTrue(finding["item_index"] is None
+                            or isinstance(finding["item_index"], int))
+
+
+class FindLinksTest(unittest.TestCase):
+    """find_links is the link model: what counts as a link, and what does not."""
+
+    def test_find_links_in_order_without_repeats(self):
+        text = ("See https://www.ebay.de/itm/123456789001 and "
+                "https://www.amazon.de/dp/B0TEST1234, then "
+                "https://www.ebay.de/itm/123456789001 again.")
+        self.assertEqual(G.find_links(text), [EBAY_LINK, AMAZON_LINK])
+
+    def test_find_links_strips_sentence_punctuation(self):
+        # The closing bracket, the full stop and the semicolon belong to the
+        # sentence, not to the address.
+        text = ("(https://www.amazon.de/dp/B0TEST1234). "
+                "[https://www.ebay.de/itm/123456789001];")
+        self.assertEqual(G.find_links(text), [AMAZON_LINK, EBAY_LINK])
+
+    def test_find_links_removes_query_and_fragment(self):
+        # Two links that differ only in tracking are one product link.
+        text = ("https://www.amazon.de/dp/B0TEST1234?tag=acme#reviews "
+                "https://www.amazon.de/dp/B0TEST1234?ref=mail")
+        self.assertEqual(G.find_links(text), [AMAZON_LINK])
+
+    def test_find_links_ignores_text_without_links(self):
+        self.assertEqual(G.find_links(""), [])
+        self.assertEqual(G.find_links("Hex bolt M8, part AC-4417"), [])
+        self.assertEqual(G.find_links(None), [])
+
+
+class ProductLinkIdTest(unittest.TestCase):
+    """product_link_id decides whether a link is a product and what its id is."""
+
+    def test_product_link_id_amazon(self):
+        self.assertEqual(G.product_link_id(AMAZON_LINK), "ASIN:B0TEST1234")
+        self.assertEqual(G.product_link_id(
+            "https://www.amazon.de/gp/product/B0TEST1234"), "ASIN:B0TEST1234")
+        # Amazon puts the product title in a path segment before /dp/.
+        self.assertEqual(G.product_link_id(
+            "https://www.amazon.de/Hex-Bolt-M8/dp/B0TEST1234"),
+            "ASIN:B0TEST1234")
+
+    def test_product_link_id_uppercases_the_asin(self):
+        self.assertEqual(G.product_link_id("https://www.amazon.de/dp/b0test1234"),
+                         "ASIN:B0TEST1234")
+
+    def test_product_link_id_ebay(self):
+        self.assertEqual(G.product_link_id(EBAY_LINK), "EBAY:123456789001")
+
+    def test_product_link_id_aliexpress(self):
+        self.assertEqual(G.product_link_id(ALIEXPRESS_LINK),
+                         "ALIEXPRESS:1005001234567")
+
+    def test_product_link_id_rejects_other_hosts(self):
+        # The path looks like a product path, the host is not a marketplace.
+        self.assertIsNone(G.product_link_id(
+            "https://www.example.com/dp/B0TEST1234"))
+        self.assertIsNone(G.product_link_id(
+            "https://www.example.com/itm/123456789001"))
+
+    def test_product_link_id_rejects_short_or_missing_path(self):
+        # An ASIN is exactly 10 characters; 9 is not an ASIN.
+        self.assertIsNone(G.product_link_id("https://www.amazon.de/dp/B0TEST123"))
+        self.assertIsNone(G.product_link_id("https://www.amazon.de/"))
+        self.assertIsNone(G.product_link_id(None))
+
+
+class GroundUncoveredLinkTest(unittest.TestCase):
+    """UNCOVERED_LINK: a product link no item covers becomes an item."""
+
+    def test_ground_adds_item_with_quantity_from_same_line(self):
+        checked, findings = G.ground({"items": []}, LINK_SOURCE)
+        self.assertEqual([f["code"] for f in findings],
+                         ["UNCOVERED_LINK", "UNCOVERED_LINK"])
+        self.assertEqual(findings[0]["action"], "added")
+        self.assertEqual(findings[0]["value"], "ASIN:B0TEST1234")
+        self.assertEqual(findings[0]["item_index"], 0)
+        item = checked["items"][0]
+        self.assertEqual(item["description"], "ASIN:B0TEST1234")
+        self.assertEqual(item["link"], AMAZON_LINK)
+        self.assertEqual(item["part_number"], "ASIN:B0TEST1234")
+        self.assertEqual(item["quantity"], 4)
+        self.assertEqual(item["unit"], "piece")
+        self.assertTrue(item["uncertain"])
+
+    def test_ground_takes_link_quantity_from_previous_line(self):
+        # The line above the eBay link holds nothing but "2".
+        checked, findings = G.ground({"items": []}, LINK_SOURCE)
+        self.assertEqual(findings[1]["value"], "EBAY:123456789001")
+        self.assertEqual(findings[1]["item_index"], 1)
+        self.assertEqual(checked["items"][1]["quantity"], 2)
+
+    def test_ground_link_without_quantity_gets_none(self):
+        source = "Acme Tools\nhttps://www.amazon.de/dp/B0TEST1234\n"
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual(len(findings), 1)
+        self.assertIsNone(checked["items"][0]["quantity"])
+
+    def test_ground_does_not_add_covered_link_by_part_number(self):
+        # The item holds the bare ASIN, which is what an extractor writes.
+        extraction = {"items": [{"description": "Hex bolt",
+                                 "part_number": "B0TEST1234"}]}
+        source = "Acme Tools\n4x https://www.amazon.de/dp/B0TEST1234\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 1)
+
+    def test_ground_does_not_add_covered_link_by_same_link(self):
+        extraction = {"items": [{"description": "Hex bolt",
+                                 "link": AMAZON_LINK}]}
+        checked, findings = G.ground(extraction, LINK_SOURCE)
+        # Only the eBay link is new.
+        self.assertEqual([f["value"] for f in findings], ["EBAY:123456789001"])
+        self.assertEqual(len(checked["items"]), 2)
+
+    def test_ground_ignores_link_that_is_not_a_product(self):
+        source = "Acme Tools\nsee https://www.example.com/orders/4711\n"
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"], [])
+
+
+class GroundRedactedLinkTest(unittest.TestCase):
+    """REDACTED_LINK: restore a product link that a redaction cut in two."""
+
+    def test_ground_restores_redacted_link(self):
+        extraction = {"items": [{
+            "description": "Widget",
+            "link": "https://de.aliexpress.com/item/1[Telefon]234567"}]}
+        source = "Acme Tools\n%s\n" % ALIEXPRESS_LINK
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["REDACTED_LINK"])
+        self.assertEqual(findings[0]["action"], "restored")
+        self.assertEqual(findings[0]["item_index"], 0)
+        self.assertEqual(findings[0]["value"], ALIEXPRESS_LINK)
+        self.assertEqual(checked["items"][0]["link"], ALIEXPRESS_LINK)
+
+    def test_ground_leaves_short_placeholder_alone(self):
+        # A "[" inside the first 12 characters is part of the address, not a
+        # cut in the middle of a product path.
+        extraction = {"items": [{
+            "description": "Widget",
+            "link": "https://a[1].example.com/x"}]}
+        source = "Acme Tools\nhttps://a.example.com/x\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["link"], "https://a[1].example.com/x")
+
+    def test_ground_keeps_cut_link_when_no_source_link_matches(self):
+        # Nothing in the source starts with this prefix, so the cut link cannot
+        # be proven and stays as it is. The eBay link is then a new item.
+        extraction = {"items": [{
+            "description": "Widget",
+            "link": "https://de.aliexpress.com/item/9[Telefon]999999"}]}
+        source = "Acme Tools\n%s\n" % EBAY_LINK
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNCOVERED_LINK"])
+        self.assertEqual(checked["items"][0]["link"],
+                         "https://de.aliexpress.com/item/9[Telefon]999999")
+
+
+class GroundSetMultipliedTest(unittest.TestCase):
+    """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces."""
+
+    def test_ground_corrects_multiplied_set(self):
+        extraction = {"items": [{
+            "description": "Hex bolt set, 5-pack",
+            "part_number": "AC-4417", "quantity": 140, "unit": "piece"}]}
+        checked, findings = G.ground(extraction, SET_SOURCE)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "corrected")
+        self.assertEqual(findings[0]["value"], "140")
+        self.assertEqual(checked["items"][0]["quantity"], 28)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_ground_corrects_pack_of_form(self):
+        source = "Acme Tools\nMenge: 12 x 5\nWasher pack of 5\n"
+        extraction = {"items": [{"description": "Washer pack of 5",
+                                 "quantity": 60}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 12)
+
+    def test_ground_ignores_multiplied_quantity_without_pack_marker(self):
+        # 140 is a plausible order of 140 single bolts. No pack word, no change.
+        extraction = {"items": [{"description": "Hex bolt",
+                                 "part_number": "AC-4417", "quantity": 140}]}
+        checked, findings = G.ground(extraction, SET_SOURCE)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 140)
+
+    def test_ground_ignores_pack_when_quantity_is_not_multiplied(self):
+        extraction = {"items": [{
+            "description": "Hex bolt set, 5-pack",
+            "part_number": "AC-4417", "quantity": 28}]}
+        checked, findings = G.ground(extraction, SET_SOURCE)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 28)
+
+
+class GroundVariantSplitTest(unittest.TestCase):
+    """VARIANT_SPLIT: one part number under one quantity is one item."""
+
+    def test_ground_merges_variant_into_first_item(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set, part AC-4417",
+             "part_number": "AC-4417", "quantity": 4},
+            {"description": "IO link variant", "part_number": "ac 4417"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
+        self.assertEqual(findings[0]["action"], "merged")
+        self.assertEqual(findings[0]["item_index"], 0)
+        self.assertEqual(len(checked["items"]), 1)
+        self.assertEqual(checked["items"][0]["note"], "variant: IO link variant")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_ground_appends_variant_to_existing_note(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4, "note": "checked with supplier"},
+            {"description": "IO link variant", "part_number": "AC-4417"},
+        ]}
+        checked, _findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(checked["items"][0]["note"],
+                         "checked with supplier · variant: IO link variant")
+
+    def test_ground_keeps_variant_with_its_own_quantity(self):
+        # A second position with its own quantity is a second order line, not a
+        # variant of the first.
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "IO link variant", "part_number": "AC-4417",
+             "quantity": 2},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
+
+    def test_ground_does_not_merge_short_part_number(self):
+        # "M8" occurs on half the parts in the world. It proves nothing.
+        extraction = {"items": [
+            {"description": "Hex bolt", "part_number": "M8", "quantity": 4},
+            {"description": "Washer", "part_number": "M8"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\n")
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
+
+
+class GroundLinkContractTest(unittest.TestCase):
+    """The new checks keep the promises ground() already made."""
+
+    def test_ground_does_not_mutate_input_with_links_and_variants(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set, 5-pack", "part_number": "AC-4417",
+             "quantity": 140},
+            {"description": "IO link variant", "part_number": "AC-4417"},
+            {"description": "Widget",
+             "link": "https://de.aliexpress.com/item/1[Telefon]234567"},
+        ]}
+        source = ("Acme Tools - order confirmation\n"
+                  "4x https://www.amazon.de/dp/B0TEST1234\n"
+                  "quantity: 28 x 5\n"
+                  "%s\n" % ALIEXPRESS_LINK)
+        snapshot = copy.deepcopy(extraction)
+        checked, _findings = G.ground(extraction, source)
+        self.assertEqual(extraction, snapshot)
+        self.assertIsNot(checked, extraction)
+        self.assertIsNot(checked["items"][0], extraction["items"][0])
+
+    def test_finding_shape_for_link_checks(self):
+        extraction = {"items": [{
+            "description": "Hex bolt set, 5-pack",
+            "part_number": "AC-4417", "quantity": 140}]}
+        source = ("Acme Tools\n"
+                  "4x https://www.amazon.de/dp/B0TEST1234\n"
+                  "quantity: 28 x 5\n"
+                  "Hex bolt set, 5-pack, part AC-4417\n")
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings],
+                         ["UNCOVERED_LINK", "SET_MULTIPLIED"])
+        for finding in findings:
+            self.assertEqual(set(finding),
+                             {"code", "item_index", "value", "evidence",
+                              "action"})
             self.assertIsInstance(finding["value"], str)
             self.assertIsInstance(finding["evidence"], str)
             self.assertIsInstance(finding["action"], str)
