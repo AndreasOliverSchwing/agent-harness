@@ -1044,16 +1044,17 @@ def _synthetic_gtin13(serial):
 
 
 class HostileMailCostTest(unittest.TestCase):
-    """One hostile mail cannot cost more than its own length (S2).
+    """One hostile mail cannot cost more than its own length (S2, S3).
 
     A supplier mail is untrusted input, and the README promises that it stays
-    cheap. Two shapes used to cost far more than their length: one distinct
+    cheap. Three shapes used to cost far more than their length: one distinct
     product link per line (the covered-link check rescanned every appended item
-    for every link), and many GTINs on one line (the GTIN owner re-tokenised the
-    line for every number).
+    for every link), many GTINs on one line (the GTIN owner re-tokenised the
+    line for every number), and a set line beside a very long extracted id (the
+    line-form scan was bounded by the longest id in the mail).
 
     The bound is generous: the linear code needs about a tenth of a second at
-    these sizes, and the quadratic code needed 12 s and 186 s.
+    these sizes, and the quadratic code needed 12 s, 186 s and 1.4 s.
     """
 
     SIZE = 100 * 1024
@@ -1101,6 +1102,29 @@ class HostileMailCostTest(unittest.TestCase):
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters of GTINs"
                         % (elapsed, len(source)))
+
+    def test_ground_is_linear_on_a_set_line_beside_a_long_id(self):
+        # 3,300 one-letter tokens, and a 1,000-character part number in the
+        # extraction: the line-form scan may not be bounded by that id.
+        words = " ".join("abcdefghij"[index % 10] for index in range(3300))
+        source = ("Acme Tools\n"
+                  "Sechskantschraube M8\n"
+                  "2er-Pack\n"
+                  "quantity: 4 x 2\n"
+                  + words + "\n")
+        extraction = {"items": [
+            {"part_number": "Q" * 1000, "quantity": 8,
+             "description": "Hex bolt"},
+            {"part_number": "AC-4417", "quantity": 8,
+             "description": "Washer"},
+        ]}
+        started = time.perf_counter()
+        G.ground(extraction, source)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters beside a long id"
+                        % (elapsed, len(source)))
+
 
 class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""
@@ -1322,6 +1346,31 @@ class GroundRedactedLinkTest(unittest.TestCase):
 
 class GroundSetMultipliedTest(unittest.TestCase):
     """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces."""
+
+    def test_an_id_longer_than_64_characters_is_not_used_for_line_matching(self):
+        # The set check bounds its work per item by capping the id length it
+        # matches on a line. An id of 70 characters is not used, so the line it
+        # sits on grounds no item and the quantity stays as the extractor wrote
+        # it. The bound is documented in SPEC-REFERENCE.md.
+        long_id = "Q" * 70
+        source = ("Acme Tools\n"
+                  + long_id + " 2er-Pack\n"
+                  "quantity: 4 x 2\n")
+        extraction = {"items": [{"part_number": long_id, "quantity": 8}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+
+    def test_an_id_of_64_characters_is_still_used_for_line_matching(self):
+        # The cap is a bound, not a ban: an id at the limit still owns its line.
+        long_id = "Q" * 64
+        source = ("Acme Tools\n"
+                  + long_id + " 2er-Pack\n"
+                  "quantity: 4 x 2\n")
+        extraction = {"items": [{"part_number": long_id, "quantity": 8}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
 
     def test_ground_corrects_multiplied_set(self):
         extraction = {"items": [{

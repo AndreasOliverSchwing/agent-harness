@@ -163,6 +163,15 @@ GTIN_LENGTHS = (8, 12, 13, 14)
 # the supplier mails ever written, so flagging it would be noise.
 MIN_ID_LEN = 4
 
+# Longest id the set check uses for line matching. The check builds every form a
+# line could hold, bounded by the longest id in the mail, so one 1,000-character
+# part number made it build 1,000-character forms for every token on the line:
+# 352 MB and 1.3 s on a 6 KB mail. A part number longer than 64 characters is not
+# a part number, so it is not used for line matching. It is still grounded and
+# still flagged by UNGROUNDED_ID, which does not build forms. See
+# SPEC-REFERENCE.md, "A set line corrects only its own item".
+MAX_LINE_ID_LEN = 64
+
 # A description word must be at least this long to count towards a match. Short
 # words ("for", "the", "x") match everywhere and carry no product meaning.
 MIN_WORD_LEN = 4
@@ -1996,8 +2005,10 @@ def _line_id_forms(fact, max_length):
     run of the line's letters and digits, or several runs in a row. A form may
     not run through punctuation that is not a documented joiner, for the same
     reason UNGROUNDED_ID refuses one: "AC-4417, 8" does not hold "AC-44178".
-    Only forms no longer than the longest id in the mail are built, which bounds
-    the work on a line of many words.
+    Only forms no longer than the longest indexed id are built, which bounds the
+    work on a line of many words, and that longest id is capped at
+    MAX_LINE_ID_LEN. Without the cap one 1,000-character part number made the
+    scan build 1,000-character forms for every token on the line.
     """
     flat = fact["flat"]
     hard = fact["hard"]
@@ -2042,6 +2053,11 @@ def _grounded_by_line(items, facts):
     then walks the few items a line grounds instead of every item in the mail
     for every set line, which keeps a mail with a thousand positions linear
     enough to run on untrusted text.
+
+    An id longer than MAX_LINE_ID_LEN is not indexed and does not ground a line.
+    The line-form scan is bounded by the longest indexed id, so one absurd id in
+    the extraction could otherwise make every token on a line build a form as
+    long as that id. The bound is documented in SPEC-REFERENCE.md.
     """
     ids = {}
     gtins = {}
@@ -2057,7 +2073,7 @@ def _grounded_by_line(items, facts):
             if form is not None:
                 gtins.setdefault(form, set()).add(index)
             flat = _id_form(value)
-            if len(flat) >= MIN_ID_LEN:
+            if MIN_ID_LEN <= len(flat) <= MAX_LINE_ID_LEN:
                 ids.setdefault(flat, set()).add(index)
         link = item.get("link")
         if isinstance(link, str) and link:
@@ -2077,7 +2093,7 @@ def _grounded_by_line(items, facts):
         bucket = words_any if len(item_words[index]) <= 2 else words_check
         for word in item_words[index]:
             bucket.setdefault(word, set()).add(index)
-    max_length = max([len(form) for form in ids] or [0])
+    max_length = min(max([len(form) for form in ids] or [0]), MAX_LINE_ID_LEN)
     # Ids first, over the whole source: an item whose id occurs anywhere is
     # grounded by ids only.
     id_found = []

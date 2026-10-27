@@ -272,6 +272,12 @@ name", not as a recall rate on real extractor output.
   link per line is linear, and the GTIN owner tokenises a line once, so a line
   of thousands of numbers costs its own length. 100 KB of either shape finishes
   in under a second. Timing tests in the suite hold those bounds.
+- **The set check does not use an id longer than 64 characters for line
+  matching.** It builds every form a line could hold, bounded by the longest id
+  in the extraction, so one absurd id would make every token on a line build a
+  form as long as that id. A part number of 65 characters or more is not a part
+  number: it grounds nothing on a line, so a set line next to it corrects
+  nothing. `UNGROUNDED_ID` still reads it.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - **An id is grounded on a token boundary, not as a substring.** A source that
