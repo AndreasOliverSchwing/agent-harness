@@ -743,6 +743,63 @@ class LinkRegexCostTest(unittest.TestCase):
                         % (elapsed, len(source)))
 
 
+class IdentifierRegexCostTest(unittest.TestCase):
+    """The identifier regexes stay linear on untrusted text (QA 15).
+
+    A supplier mail is untrusted input. The quantity-label regex was quadratic
+    on a long run of spaces after the label ("qty" followed by 20,000 spaces
+    took 1.4 s) because two `\\s*` quantifiers shared the same run. The bound
+    below is generous: the linear code needs about a millisecond.
+    """
+
+    LENGTH = 20000
+    BOUND_SECONDS = 0.1
+
+    def test_ground_is_linear_on_a_long_space_run_after_a_quantity_label(self):
+        source = "Acme Tools\nqty" + " " * self.LENGTH
+        started = time.perf_counter()
+        G.ground({"items": []}, source)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters"
+                        % (elapsed, len(source)))
+
+    def test_ground_is_linear_on_many_set_lines(self):
+        # The pack-marker scan runs once per set line unless the sizes are
+        # collected once for the whole text.
+        source = "Acme Tools\n" + "quantity: 2 x 2 " * 1000
+        started = time.perf_counter()
+        G.ground({"items": []}, source)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters"
+                        % (elapsed, len(source)))
+
+    def test_find_gtins_is_linear_on_a_long_digit_run(self):
+        text = "1" * self.LENGTH
+        started = time.perf_counter()
+        G.find_gtins(text)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "find_gtins took %.3f s on %d characters"
+                        % (elapsed, len(text)))
+
+    def test_ground_is_linear_on_a_long_digit_run(self):
+        # The pack-marker patterns start with "(\d+)" and no boundary, so every
+        # position inside a long digit run starts a fresh scan: 20,000 digits
+        # took 6 s once the marker scan ran on every source.
+        source = "Acme Tools\n" + "1" * self.LENGTH
+        extraction = {"items": [{"description": "Widget",
+                                 "part_number": "AC-441",
+                                 "gtin": "96385074"}]}
+        started = time.perf_counter()
+        G.ground(extraction, source)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters"
+                        % (elapsed, len(source)))
+
+
 class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""
 

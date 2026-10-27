@@ -238,7 +238,10 @@ name", not as a recall rate on real extractor output.
   like a product path on another domain is never read as a product.
 - **Untrusted text stays cheap.** Link scanning is linear in the length of the
   text: a 20,000-character line with a long punctuation run finishes in about a
-  millisecond. A timing test in the suite holds that bound.
+  millisecond. The identifier path is linear too: the quantity label (`qty`,
+  `Menge`, `quantity:`), the digit-run scan behind `find_gtins`, and the
+  pack-marker scan that runs once per source instead of once per set line.
+  Timing tests in the suite hold those bounds.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - **An id is grounded on a token boundary, not as a substring.** A source that

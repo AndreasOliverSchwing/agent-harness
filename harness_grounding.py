@@ -267,17 +267,26 @@ _QTY_ONLY = re.compile(
 
 # "quantity: 28 x 5", "qty 28x5", "Menge: 28 x 5". The label is required: a
 # bare "28 x 5" is also how a dimension or a pair of sizes is written.
+#
+# The colon sits inside one optional group on purpose. "\s*:?\s*" splits a run
+# of spaces between two quantifiers, so every split is tried: 20,000 spaces
+# after "qty" took 2.9 s. "\s*(?::\s*)?" has one owner for the run.
 _SET_LINE = re.compile(
-    r"\b(?:quantity|qty|menge)\s*:?\s*(\d+)\s*[x×]\s*(\d+)", re.IGNORECASE)
+    r"\b(?:quantity|qty|menge)\s*(?::\s*)?(\d+)\s*[x×]\s*(\d+)", re.IGNORECASE)
 
 # Ways a supplier writes that the item is a pack of M pieces: "5 pack",
 # "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5", "5er".
+#
+# The digit run is bounded and starts on a boundary. A bare "(\d+)" retries from
+# every position inside a long digit run: 20,000 digits took 6 s. A pack size is
+# a small number, so four digits is the limit and "(?<!\d)" keeps the pattern out
+# of the middle of a longer number.
 _PACK_MARKERS = (
-    re.compile(r"(\d+)\s*-\s*pack\b", re.IGNORECASE),
-    re.compile(r"(\d+)\s*pack\b", re.IGNORECASE),
-    re.compile(r"\bpack\s+of\s+(\d+)\b", re.IGNORECASE),
-    re.compile(r"\bset\s+of\s+(\d+)\b", re.IGNORECASE),
-    re.compile(r"(\d+)\s*er\b", re.IGNORECASE),
+    re.compile(r"(?<!\d)(\d{1,4})\s*-\s*pack\b", re.IGNORECASE),
+    re.compile(r"(?<!\d)(\d{1,4})\s*pack\b", re.IGNORECASE),
+    re.compile(r"\bpack\s+of\s+(\d{1,4})\b", re.IGNORECASE),
+    re.compile(r"\bset\s+of\s+(\d{1,4})\b", re.IGNORECASE),
+    re.compile(r"(?<!\d)(\d{1,4})\s*er\b", re.IGNORECASE),
 )
 
 
@@ -765,13 +774,14 @@ def _check_set_multiplied(items, origins, source_text):
     """
     findings = []
     corrected = set()
+    packs = _marked_pack_sizes(source_text)
     for match in _SET_LINE.finditer(source_text):
         outer = int(match.group(1))
         pack = int(match.group(2))
         # A "1 x 1" is not a set and "0" is not an order.
         if outer <= 0 or pack <= 1:
             continue
-        if not _marks_pack(source_text, pack):
+        if pack not in packs:
             continue
         for index, item in enumerate(items):
             if index in corrected or not isinstance(item, dict):
@@ -1197,18 +1207,18 @@ def _link_quantity(lines, line_index, line, raw_url):
     return None
 
 
-def _marks_pack(text, pack):
-    """True when text marks a pack of exactly pack pieces.
+def _marked_pack_sizes(text):
+    """Return the pack sizes that a pack marker in text names.
 
     "5 pack", "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5" and
-    "5er" all say the same thing. The number must match the pack size; a
-    "10-pack" is not a "5 x".
+    "5er" all say the same thing, so the sizes are collected once per text. A
+    per-match scan over the whole text is quadratic: 1,000 set lines in one
+    16 KB mail took 1.2 s.
     """
+    sizes = set()
     if not isinstance(text, str) or not text:
-        return False
+        return sizes
     for pattern in _PACK_MARKERS:
         for match in pattern.finditer(text):
-            if int(match.group(1)) == pack:
-                return True
-    return False
-
+            sizes.add(int(match.group(1)))
+    return sizes
