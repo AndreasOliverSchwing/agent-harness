@@ -261,6 +261,11 @@ name", not as a recall rate on real extractor output.
 - The GTIN-to-item match uses word overlap on the description, and generic words
   do not count (`part`, `item`, `quantity`, `GTIN`, …). A short or generic
   description ("Set", "Artikel") can miss, and the finding then carries no item.
+- **A GTIN is one number space.** GTIN-8, -12, -13 and -14 are compared as the
+  GTIN-14 (zero-padded) form, so `036000291452` and `0036000291452` are the same
+  GTIN: it is grounded, and it is not attached twice. A number an item already
+  carries in `gtin`, `part_number` or `other_ids` (with or without an `EAN:`
+  label) is never attached again. `gtin14()` exposes the padded form.
 - Quantity words are English and German only (`x`, `pcs`, `Stück`, `Menge`, …).
 - `SET_MULTIPLIED` needs a pack marker of the same size in the source text. It
   reads the whole source, so a marker of that size on another product's line can

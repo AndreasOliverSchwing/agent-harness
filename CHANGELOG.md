@@ -21,6 +21,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- GTINs are compared as one number space. GTIN-8, -12, -13 and -14 are padded to
+  the GTIN-14 form, so the source's `036000291452` grounds an extraction's
+  `0036000291452` (no `UNGROUNDED_ID`) and the number is not attached a second
+  time (no duplicate `MISSING_GTIN`). A GTIN an item already carries in
+  `part_number` or in `other_ids` with an `EAN:` label is never attached again.
+  New public helper: `gtin14(code)`.
 - `MISSING_GTIN` attaches a digit run only when the source names it. The line
   must carry `GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode` or `bar code`, and the
   run must not sit inside a link. A phone number (`Tel. +49 89 12345670`), an

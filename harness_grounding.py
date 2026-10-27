@@ -970,9 +970,10 @@ def _check_missing_gtins(items, origins, source_text):
     if not candidates:
         return findings
 
-    carried = _carried_ids(items)
+    carried = _carried_gtins(items)
     for gtin, line in candidates:
-        if gtin in carried:
+        form = gtin14(gtin)
+        if form in carried:
             continue
         index = _best_item(items, line)
         if index is None:
@@ -994,7 +995,7 @@ def _check_missing_gtins(items, origins, source_text):
             item["gtin"] = gtin
             field = "gtin"
         item["uncertain"] = True
-        carried.add(gtin)
+        carried.add(form)
         findings.append(_finding(
             "MISSING_GTIN", "attached",
             evidence=line or "GTIN %s occurs in the source text" % gtin,
@@ -1018,16 +1019,24 @@ def _as_list(value):
     return [value]
 
 
-def _carried_ids(items):
-    """Normalized ids that some item already claims, from gtin and other_ids."""
+def _carried_gtins(items):
+    """Return the GTIN-14 forms that some item already claims.
+
+    A GTIN counts as carried wherever an extractor put it: in gtin, in
+    part_number, or in other_ids with a label ("EAN:0036000291452"). The
+    comparison is on the GTIN-14 form, so the same number with or without its
+    leading zeros is not attached a second time under the other spelling.
+    """
     carried = set()
     for item in items:
         if not isinstance(item, dict):
             continue
-        for value in [item.get("gtin")] + _as_list(item.get("other_ids")):
-            flat = normalize_id(value)
-            if flat:
-                carried.add(flat)
+        values = [item.get("gtin"), item.get("part_number")]
+        values.extend(_as_list(item.get("other_ids")))
+        for value in values:
+            form = _gtin14_of_value(value)
+            if form is not None:
+                carried.add(form)
     return carried
 
 

@@ -447,6 +447,50 @@ class GtinKeywordRuleTest(unittest.TestCase):
         self.assertNotIn("gtin", checked["items"][1])
 
 
+class GtinLeadingZerosTest(unittest.TestCase):
+    """A GTIN is one number space, not four (QA 7).
+
+    GTIN-8, -12, -13 and -14 are the same number with different leading zeros.
+    The source may hold "036000291452" where the extractor wrote
+    "0036000291452". That is the same GTIN: it is grounded, and it is not
+    attached a second time under the other spelling.
+    """
+
+    SOURCE = "Acme Tools\n4 x Widget assembly  EAN 036000291452\n"
+
+    def test_ground_grounds_a_gtin_written_without_its_leading_zero(self):
+        extraction = {"items": [{"description": "Widget assembly",
+                                 "gtin": "0036000291452"}]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["gtin"], "0036000291452")
+        self.assertNotIn("uncertain", checked["items"][0])
+
+    def test_ground_grounds_a_gtin14_of_a_gtin12_in_the_source(self):
+        extraction = {"items": [{"description": "Widget assembly",
+                                 "gtin": "00036000291452"}]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["gtin"], "00036000291452")
+
+    def test_ground_does_not_attach_a_gtin_that_part_number_carries(self):
+        extraction = {"items": [{"description": "Widget assembly",
+                                 "part_number": "036000291452"}]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(findings, [])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_ground_does_not_attach_a_gtin_that_other_ids_carries(self):
+        # The label names the number; it is not part of it.
+        extraction = {"items": [{"description": "Widget assembly",
+                                 "other_ids": ["EAN:0036000291452"]}]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["other_ids"],
+                         ["EAN:0036000291452"])
+        self.assertNotIn("gtin", checked["items"][0])
+
+
 class GroundContractTest(unittest.TestCase):
     """The promises ground() makes to every caller."""
 

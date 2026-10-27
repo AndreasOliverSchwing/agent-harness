@@ -163,6 +163,22 @@ its content words with the line. Generic words do not count (`part`, `item`,
 so a line that names no product produces `reported` with `item_index: None`
 rather than a GTIN on the wrong item.
 
+### A GTIN is one number space
+
+GS1 has one number space, not four. A GTIN-8, -12 and -13 are the GTIN-14 with
+leading zeros, so `036000291452`, `0036000291452` and `00036000291452` are the
+same GTIN. `gtin14(code)` returns that form, or `None` when the check digit is
+wrong.
+
+Both GTIN checks compare the padded form:
+
+- `UNGROUNDED_ID` grounds a `gtin` value when the source holds the same number
+  under another spelling. The extractor may write `0036000291452` where the
+  source has `036000291452`.
+- `MISSING_GTIN` does not attach a number that an item already carries. The
+  item's `gtin`, `part_number` and `other_ids` all count, and a label in front of
+  the number is ignored: `EAN:0036000291452` carries the GTIN.
+
 ### How an id is grounded
 
 `UNGROUNDED_ID` grounds an id on a token boundary. A source that holds
