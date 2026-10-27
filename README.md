@@ -265,7 +265,8 @@ name", not as a recall rate on real extractor output.
 - **Untrusted text stays cheap.** Link scanning is linear in the length of the
   text: a 20,000-character line with a long punctuation run finishes in about a
   millisecond. The identifier path is linear too: the quantity label (`qty`,
-  `Menge`, `quantity:`), the pack-marker scan that runs once per line instead of
+  `Qty.`, `Menge`, `Menge (VE)`, `Bestellmenge`, `Liefermenge`, `Anzahl`,
+  `quantity:`), the pack-marker scan that runs once per line instead of
   once per set line, and the de-duplication in `find_gtins`, which remembers the
   numbers it found in a set instead of scanning a list (40,000 distinct numbers
   took 5.7 s as a list and 0.05 s as a set).

@@ -1463,6 +1463,42 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 12)
 
+    # S10 from the 2026-10-27 recheck. A supplier does not write "Menge:" only.
+    # Each test below writes one label that real mail carries, and the set line
+    # must be read the same way for every one of them: 140 pieces is 28 sets of
+    # 5, not 140 pieces.
+    def _assert_label_corrects_the_set(self, label):
+        source = ("Acme Tools - order confirmation\n"
+                  "%s 28 x 5\n"
+                  "Hex bolt set, 5-pack, part AC-4417\n" % label)
+        extraction = {"items": [{"part_number": "AC-4417",
+                                 "description": "Hex bolt set, 5-pack",
+                                 "quantity": 140}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"],
+                         label)
+        self.assertEqual(findings[0]["new_value"], 28, label)
+        self.assertEqual(checked["items"][0]["quantity"], 28, label)
+        self.assertEqual(checked["items"][0]["unit"], "set", label)
+
+    def test_bestellmenge_label_marks_a_set_line(self):
+        self._assert_label_corrects_the_set("Bestellmenge:")
+
+    def test_liefermenge_label_marks_a_set_line(self):
+        self._assert_label_corrects_the_set("Liefermenge:")
+
+    def test_anzahl_label_marks_a_set_line(self):
+        self._assert_label_corrects_the_set("Anzahl:")
+
+    def test_qty_with_a_full_stop_marks_a_set_line(self):
+        # "Qty." is the abbreviation with its full stop. The stop belongs to the
+        # label and must not hide the number behind it.
+        self._assert_label_corrects_the_set("Qty.")
+
+    def test_menge_with_the_packaging_unit_marks_a_set_line(self):
+        # "Menge (VE)" names the quantity in Verpackungseinheiten.
+        self._assert_label_corrects_the_set("Menge (VE):")
+
     def test_pack_word_in_the_description_is_not_evidence(self):
         # The extractor wrote "5-pack"; the source never says pack. A pack size
         # the source does not state is not a correction, it is a guess.

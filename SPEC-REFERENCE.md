@@ -315,6 +315,11 @@ ignored, and a value above `10**9` is not a quantity. `10**400` raises
 ### A set line corrects only its own item
 
 `SET_MULTIPLIED` rewrites a quantity only when the set line belongs to that item.
+A set line carries a quantity label and an `N x M` pair. The labels are `Menge`,
+`Bestellmenge`, `Liefermenge`, `Anzahl`, `quantity` and `qty`, in any case, with
+an optional colon, an optional full stop (`Qty.`) and an optional packaging-unit
+note (`Menge (VE)`). A bare `28 x 5` is not a set line: it is also how a
+dimension is written.
 Two conditions must hold, and both must hold on one line:
 
 1. **The item belongs to the set line.** A set line belongs to the items

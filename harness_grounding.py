@@ -366,18 +366,26 @@ _CURRENCY = re.compile(
     r"|mwst|vat)\b",
     re.IGNORECASE)
 
-# "quantity: 28 x 5", "qty 28x5", "Menge: 28 x 5". The label is required: a
-# bare "28 x 5" is also how a dimension or a pair of sizes is written.
+# "quantity: 28 x 5", "qty 28x5", "Menge: 28 x 5", "Bestellmenge: 28 x 5",
+# "Liefermenge: 28 x 5", "Anzahl: 28 x 5", "Qty. 28 x 5", "Menge (VE): 28 x 5".
+# The label is required: a bare "28 x 5" is also how a dimension or a pair of
+# sizes is written. The longer spellings come first, so "Bestellmenge" is not
+# read as "Menge" with a word in front of it.
 #
-# The colon sits inside one optional group on purpose. "\s*:?\s*" splits a run
-# of spaces between two quantifiers, so every split is tried: 20,000 spaces
-# after "qty" took 2.9 s. "\s*(?::\s*)?" has one owner for the run.
+# The separator sits inside one optional group on purpose. "\s*:?\s*" splits a
+# run of spaces between two quantifiers, so every split is tried: 20,000 spaces
+# after "qty" took 2.9 s. "\s*(?::\s*)?" has one owner for the run. The full
+# stop of "Qty." and the "(VE)" unit sit in the same group, and each of them
+# must match a character that is not a space, so a run of spaces still has one
+# owner.
 # The digit runs are bounded and start and end on a digit boundary: a bare
 # "(\d+)" retries from every position inside a long run, and int() of a
 # 5,000-digit match raises ValueError on Python 3.11+. A set size is a small
 # number, so the cap is the quantity cap.
 _SET_LINE = re.compile(
-    r"\b(?:quantity|qty|menge)\s*(?::\s*)?(?<!\d)(\d{1,%d})\s*[x×]\s*"
+    r"\b(?:bestellmenge|liefermenge|anzahl|quantity|qty|menge)\b"
+    r"\s*(?:[.:]\s*)?(?:\(\s*ve\s*\)\s*(?:[.:]\s*)?)?"
+    r"(?<!\d)(\d{1,%d})\s*[x×]\s*"
     r"(\d{1,%d})(?!\d)" % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
     re.IGNORECASE)
 
