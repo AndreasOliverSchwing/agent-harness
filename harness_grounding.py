@@ -274,9 +274,15 @@ _GTIN_KEYWORD = re.compile(
 MAX_QUANTITY = 10 ** 9
 MAX_QUANTITY_DIGITS = 12
 
-# A quantity word at the end of a value: "2 pcs", "2 Stück", "4x".
+# A quantity word at the end of a value: "2 pcs", "2 Stück", "4x", "2 St.".
+# One list serves every quantity pattern, so a word that parses in a value also
+# parses on a line of its own. The longer spellings come first: an alternative
+# that matched "st" inside "stck" would leave "ck" behind and lose the number.
+_QUANTITY_UNIT_WORDS = (
+    r"x|×|pcs?\.?|pieces?|stck\.?|stueck|stück|stk\.?|st\.?|units?|sets?"
+    r"|ve\.?|paar|pack|kg")
 _QUANTITY_UNIT = re.compile(
-    r"\s*(?:x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?)\s*$", re.IGNORECASE)
+    r"\s*(?:%s)\s*$" % _QUANTITY_UNIT_WORDS, re.IGNORECASE)
 
 # A value that is a number with optional separators, and nothing else. A price
 # with a currency sign ("12,50 €") is not a quantity and does not match.
@@ -287,16 +293,16 @@ _NUMBER_TEXT = re.compile(r"[+-]?[\d.,]+")
 # the pattern backtrack, and so no unbounded int() is reachable.
 _QTY_BEFORE = re.compile(
     r"(\d{1,%d}(?:[.,]\d{1,%d})?)\s*"
-    r"(?:x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?)\s*$"
-    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
+    r"(?:%s)\s*$"
+    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS, _QUANTITY_UNIT_WORDS),
     re.IGNORECASE)
 
 # A line that holds nothing but a quantity: "4", "4 x", "4 pcs", "1.000 Stück".
 # Group 2 is the unit word; it is None for a bare number.
 _QTY_LINE = re.compile(
     r"^\s*(\d{1,%d}(?:[.,]\d{1,%d})?)"
-    r"(?:\s*(x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?))?\s*$"
-    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
+    r"(?:\s*(%s))?\s*$"
+    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS, _QUANTITY_UNIT_WORDS),
     re.IGNORECASE)
 
 # A line that carries money carries no quantity. A price sits on the same line
@@ -949,6 +955,11 @@ def _check_variant_split(items, origins):
     second position. It is merged into the first item as a note and removed, so
     the quote does not count the part twice.
 
+    "No quantity of its own" is a question about the field, not about the
+    number. A line whose quantity field is non-empty is a second position even
+    when _to_number() cannot read the value ("2 St.", 10 ** 400), so it is never
+    merged: a merge must not delete an order line.
+
     A merge must not lose data. The variant's link, gtin and other_ids move to
     the survivor when the survivor lacks them. When both lines carry a
     different value for one key, the survivor keeps its own and the variant's
@@ -973,7 +984,10 @@ def _check_variant_split(items, origins):
             # merged away itself, so it is always a valid merge target.
             survivor_for[number] = index
             continue
-        if _quantity_of(item) is not None:
+        if not _quantity_field_is_empty(item):
+            # A line with a quantity of its own is a second position, not a
+            # variant. That holds whether or not the parser can read the
+            # number: never delete a line the parser cannot read.
             continue
         pairs.append((index, survivor_for[number]))
     if not pairs:
@@ -1359,6 +1373,24 @@ def _quantity_of(item):
     if not isinstance(item, dict):
         return None
     return _to_number(item.get("quantity"))
+
+
+def _quantity_field_is_empty(item):
+    """True when an item states no quantity at all.
+
+    This is not the same question as _quantity_of(). A value the parser cannot
+    read ("2 St.", 10 ** 400) is still a quantity the extractor wrote down, and
+    a line that carries one is a second position. VARIANT_SPLIT must never
+    delete such a line, so it asks this question instead of "is it a number".
+    """
+    if not isinstance(item, dict):
+        return True
+    value = item.get("quantity")
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return False
 
 
 def _link_id_forms(link_id):

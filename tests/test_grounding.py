@@ -1214,6 +1214,24 @@ class GroundVariantSplitTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
 
+    def test_a_line_with_an_unreadable_quantity_is_never_merged(self):
+        # B2 from the 2026-10-27 recheck. "2 St." states a quantity that the
+        # parser could not read, so the line was folded into item 0 and the
+        # second position vanished from the quote.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": "4 St.",
+             "description": "Sechskantschraube M8 verzinkt"},
+            {"part_number": "AC-44170", "quantity": "2 St.",
+             "description": "Sechskantschraube M8 Edelstahl"},
+        ]}
+        source = ("Pos. 1  AC-44170 Sechskantschraube M8 verzinkt   4 St.\n"
+                  "Pos. 2  AC-44170 Sechskantschraube M8 Edelstahl  2 St.\n")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         ["4 St.", "2 St."])
+
     def test_ground_does_not_merge_short_part_number(self):
         # "M8" occurs on half the parts in the world. It proves nothing.
         extraction = {"items": [
@@ -1442,6 +1460,14 @@ class QuantityFormatTest(unittest.TestCase):
         self.assertEqual(G._to_number("2 pcs"), 2)
         self.assertEqual(G._to_number("2 St\u00fcck"), 2)
 
+    def test_german_and_english_unit_words_parse(self):
+        # B2: a supplier writes "St.", "Stck.", "ST", "VE", "Paar", "Pack",
+        # "kg" and "Stueck". Each is a unit word, not part of the number.
+        for text in ("2 St.", "2 Stck.", "2 ST", "2 VE", "2 Paar", "2 Pack",
+                     "2 Stueck", "2 Stück", "2 stk."):
+            self.assertEqual(G._to_number(text), 2, text)
+        self.assertEqual(G._to_number("2,5 kg"), 2.5)
+
     def test_decimal_quantity_keeps_the_variant_line(self):
         extraction = {"items": [
             {"description": "Hex bolt set", "part_number": "AC-4417",
@@ -1465,9 +1491,11 @@ class QuantityFormatTest(unittest.TestCase):
              "quantity": 10 ** 400},
         ]}
         checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
-        # An out-of-range number is not a quantity, so the line is a variant.
-        self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
-        self.assertEqual(len(checked["items"]), 1)
+        # An out-of-range number is not a quantity, but the field is not empty.
+        # A line that states a quantity is a second position, so it survives:
+        # VARIANT_SPLIT must never delete a line it cannot read (B2).
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
 
     def test_a_five_thousand_digit_run_does_not_raise(self):
         # int() of a long digit string raises ValueError on Python 3.11+.

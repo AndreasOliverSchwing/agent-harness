@@ -294,9 +294,13 @@ name", not as a recall rate on real extractor output.
   quantity, and neither does a bare fraction alone above a link (`12,50`).
   Two links on one line get one quantity each; a link with no quantity in front
   of it gets none. `"2 pcs"` and `Decimal("2")` are quantities, so
-  `VARIANT_SPLIT` keeps a line that carries one. Parsing is capped: a number
-  above `10**9` or a digit run longer than 12 is ignored, so `10**400` and a
-  5,000-digit run produce no quantity instead of an exception.
+  `VARIANT_SPLIT` keeps a line that carries one. The unit words are `x`, `×`,
+  `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `VE`,
+  `Paar`, `Pack`, `kg`, `units` and `sets`. A quantity field that is not empty
+  keeps its line even when the parser cannot read the number: a line that
+  states `"2 St."` or `10**400` is a second position, never a variant. Parsing
+  is capped: a number above `10**9` or a digit run longer than 12 is ignored, so
+  `10**400` and a 5,000-digit run produce no quantity instead of an exception.
 - `SET_MULTIPLIED` needs a pack marker of the same size in the source text, on
   the line that grounds the item. A set line and its item must be neighbours: a
   set line whose item line sits further away corrects nothing. A pack word only

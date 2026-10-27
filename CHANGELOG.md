@@ -97,6 +97,14 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   variant's link, gtin and other_ids move onto the survivor when it lacks them,
   and a value both lines carry differently is reported in the finding
   (`old_value`) with `uncertain: true`. Variant notes keep input order.
+- `VARIANT_SPLIT` no longer deletes an order line it cannot read. The check
+  asked whether the quantity *parsed*, so a line that stated `2 St.`, `2 Stck.`,
+  `2 ST`, `2 VE`, `2 Paar`, `2 Pack`, `2,5 kg` or `2 Stueck` was folded into the
+  first item and lost. It now asks whether the quantity field is empty, so a line
+  that states a quantity is always a second position. The unit words are one
+  shared list, used by the value parser and by the link-quantity patterns: `x`,
+  `×`, `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `VE`,
+  `Paar`, `Pack`, `kg`, `units`, `sets`. Documented in `SPEC-REFERENCE.md`.
 - `SET_MULTIPLIED`: corrected at most once per item, so two set lines cannot
   compound (8 → 4 → 2). The pack size comes from the source text only; a pack
   word in the extractor's description is no longer accepted as evidence. `5

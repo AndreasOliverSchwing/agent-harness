@@ -231,6 +231,16 @@ are a fraction. When both `.` and `,` occur, the last one is the decimal
 separator. `"2 pcs"` and `Decimal("2")` are quantities, so a variant line that
 carries one is a second position and `VARIANT_SPLIT` keeps it.
 
+The unit words are `x`, `×`, `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`,
+`Stück`, `Stueck`, `VE`, `Paar`, `Pack`, `kg`, `units` and `sets`. One list
+serves every quantity pattern, so a word that parses in a value also parses on a
+line of its own.
+
+`VARIANT_SPLIT` asks whether the quantity field is empty, not whether the number
+parses. A field that holds `"2 St."` or `10**400` is a quantity the extractor
+wrote down, so its line is a second position and is never merged. A merge must
+not lose an order line.
+
 A price is never a quantity. A line that carries a currency sign (`12,50 €`,
 `EUR 12,50`, `Preis 12,50`, `total 12,50`) gives a link no quantity, and so does
 a bare fraction on its own line above a link (`12,50`): a count of 12.5 pieces
