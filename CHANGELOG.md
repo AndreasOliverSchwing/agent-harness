@@ -303,6 +303,19 @@ below is one card of that round.
   says a placeholder never takes a set line. An item with `input_index` `None`
   is skipped. Tested in both modes. Documented in `README.md` and the
   `_check_set_multiplied()` docstring.
+- **A bare GTIN line follows the mail's layout (S9′a follow-up).** Card 3.4
+  reported every bare GTIN line that had an item line below it, so the common
+  layout that prints the EAN under each position lost every number but the last:
+  `AC-44170 …\nEAN: G1\nNW-22010 …\nEAN: G2` reported G1 and attached only G2. A
+  bare line with an item-naming line on exactly ONE side is now anchored, and it
+  reads that neighbour, above or below. The anchored lines also state the mail's
+  layout: when every anchor reads the line above, a bare line with item lines on
+  both sides reads the line above, and when every anchor reads the line below,
+  such a line reads the line below. A mail with no anchor, or with anchors that
+  disagree, reports the line between two items, as card 3.4 did. Both layouts
+  and the S9′ input now attach every number to its own position; tested in both
+  modes. Documented in `SPEC-REFERENCE.md`, `README.md`, and the
+  `_check_missing_gtins()`, `_bare_gtin_layout()` and `_gtin_owner()` docstrings.
 
 ### Fixed in the second review round
 

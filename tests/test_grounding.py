@@ -933,22 +933,34 @@ class GtinNeighbourTest(unittest.TestCase):
                       "Pos. 2: Dichtungssatz passend f\u00fcr AC-44170, 2 "
                       "St\u00fcck, EAN 2000000000022")
 
-    def test_a_bare_gtin_line_below_an_item_line_belongs_to_no_neighbour(self):
+    def test_a_bare_gtin_line_below_an_item_line_follows_the_mail_layout(self):
+        # Card 3.4 reported both numbers here. The mail prints the EAN ABOVE
+        # each position, and the anchor (the first line, which has an item line
+        # on its lower side only) says so, so each number now goes to the
+        # position below it. The wrong attachment card 3.4 fixed stays fixed:
+        # G2 never goes to AC-44170 (S9'a follow-up).
         for apply in (False, True):
             checked, findings = G.ground(self.ABOVE_ITEMS, self.ABOVE_SOURCE,
                                          apply=apply)
             self.assertEqual([f["code"] for f in findings],
                              ["MISSING_GTIN", "MISSING_GTIN"], "apply=%s" % apply)
-            self.assertEqual([f["action"] for f in findings],
-                             ["reported", "reported"], "apply=%s" % apply)
-            self.assertEqual([f["item_index"] for f in findings], [None, None],
+            self.assertEqual([f["item_index"] for f in findings], [0, 1],
                              "apply=%s" % apply)
-            self.assertEqual([f["new_value"] for f in findings], [None, None],
+            self.assertEqual([f["new_value"] for f in findings],
+                             ["2000000000015", "2000000000022"],
+                             "apply=%s" % apply)
+            self.assertEqual([f["action"] for f in findings],
+                             ["attached", "attached"] if apply
+                             else ["suggested", "suggested"],
                              "apply=%s" % apply)
             self.assertIn("2000000000015", findings[0]["evidence"])
             self.assertIn("2000000000022", findings[1]["evidence"])
-            self.assertNotIn("gtin", checked["items"][0], "apply=%s" % apply)
-            self.assertNotIn("gtin", checked["items"][1], "apply=%s" % apply)
+            if apply:
+                self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
+                self.assertEqual(checked["items"][1]["gtin"], "2000000000022")
+            else:
+                self.assertNotIn("gtin", checked["items"][0], "apply=%s" % apply)
+                self.assertNotIn("gtin", checked["items"][1], "apply=%s" % apply)
 
     def test_a_gtin_on_a_line_that_describes_another_item_is_reported(self):
         for apply in (False, True):
@@ -986,6 +998,117 @@ class GtinNeighbourTest(unittest.TestCase):
             else:
                 self.assertEqual(findings[0]["action"], "suggested")
                 self.assertNotIn("gtin", checked["items"][0])
+
+
+class GtinLayoutTest(unittest.TestCase):
+    """S9'a follow-up (fix round 3): a bare GTIN line follows the mail's layout.
+
+    Card 3.4 stopped a bare GTIN line from taking the wrong neighbour by
+    reporting it whenever an item line stood below it. That broke the more
+    common layout, where the supplier prints the EAN UNDER each position: every
+    GTIN except the last one was reported, because each of those lines has an
+    item line on both sides.
+
+    The anchored bare line decides the layout. A bare line with an item-naming
+    line on exactly ONE side is anchored, and it reads that neighbour. When
+    every anchor reads the line above, the mail prints the EAN under its
+    position, and a bare line with item lines on BOTH sides reads the line above
+    as well. When every anchor reads the line below, the mail prints the EAN
+    above its position, and such a line reads the line below. No anchor at all,
+    or anchors that disagree, leave the line in the middle reported, as card 3.4
+    did.
+
+    Both modes are tested: the default suggests the GTIN, apply=True attaches it.
+    """
+
+    G1 = "2000000000015"
+    G2 = "2000000000022"
+    G3 = "2000000000039"
+
+    TWO_ITEMS = {"items": [
+        {"part_number": "AC-44170", "description": "Sechskantschraube M8"},
+        {"part_number": "NW-22010", "description": "Kabelbinder 200 mm"},
+    ]}
+    THREE_ITEMS = {"items": [
+        {"part_number": "AC-44170", "description": "Sechskantschraube M8"},
+        {"part_number": "NW-22010", "description": "Kabelbinder 200 mm"},
+        {"part_number": "XY-90001", "description": "Handschuhe Gr. 9"},
+    ]}
+
+    # The EAN sits under its own position. Every GTIN but the last has an item
+    # line on both sides, so only the last one is anchored.
+    UNDER_TWO = ("AC-44170 Sechskantschraube M8, 8 St\u00fcck\n"
+                 "EAN: 2000000000015\n"
+                 "NW-22010 Kabelbinder 200 mm, 4 St\u00fcck\n"
+                 "EAN: 2000000000022")
+    UNDER_THREE = (UNDER_TWO + "\n"
+                   "XY-90001 Handschuhe Gr. 9, 2 Paar\n"
+                   "EAN: 2000000000039")
+
+    # The EAN sits above its own position: the S9' input.
+    ABOVE_TWO = ("EAN: 2000000000015\n"
+                 "AC-44170 Sechskantschraube M8, 8 St\u00fcck\n"
+                 "EAN: 2000000000022\n"
+                 "NW-22010 Kabelbinder 200 mm, 4 St\u00fcck")
+
+    # One anchor reads the line below and one reads the line above, so the mail
+    # states no layout and the line in the middle is reported.
+    CONFLICTING = (ABOVE_TWO + "\nEAN: 2000000000039")
+
+    # Two products, one bare line between them, and no anchor to say which side
+    # it belongs to.
+    NO_ANCHOR = ("AC-44170 Sechskantschraube M8, 8 St\u00fcck\n"
+                 "EAN: 2000000000015\n"
+                 "NW-22010 Kabelbinder 200 mm, 4 St\u00fcck")
+
+    def _assert_both_modes(self, items, source, expected, written):
+        """Assert the findings and the written GTINs in both modes.
+
+        expected is (item_index, new_value) per GTIN, in source order. written
+        is the gtin field of each item after apply=True.
+        """
+        for apply in (False, True):
+            checked, findings = G.ground(copy.deepcopy(items), source,
+                                         apply=apply)
+            label = "apply=%s" % apply
+            self.assertEqual([f["code"] for f in findings],
+                             ["MISSING_GTIN"] * len(expected), label)
+            self.assertEqual([(f["item_index"], f["new_value"])
+                              for f in findings], expected, label)
+            self.assertEqual([f["action"] for f in findings],
+                             ["attached" if index is not None else "reported"
+                              for index, _ in expected] if apply else
+                             ["suggested" if index is not None else "reported"
+                              for index, _ in expected], label)
+            self.assertEqual([item.get("gtin") for item in checked["items"]],
+                             written if apply else [None] * len(written), label)
+
+    def test_the_ean_under_each_of_two_positions_belongs_to_the_position_above(self):
+        self._assert_both_modes(self.TWO_ITEMS, self.UNDER_TWO,
+                                [(0, self.G1), (1, self.G2)],
+                                [self.G1, self.G2])
+
+    def test_the_ean_under_each_of_three_positions_belongs_to_the_position_above(self):
+        self._assert_both_modes(self.THREE_ITEMS, self.UNDER_THREE,
+                                [(0, self.G1), (1, self.G2), (2, self.G3)],
+                                [self.G1, self.G2, self.G3])
+
+    def test_the_ean_above_each_of_two_positions_belongs_to_the_position_below(self):
+        self._assert_both_modes(self.TWO_ITEMS, self.ABOVE_TWO,
+                                [(0, self.G1), (1, self.G2)],
+                                [self.G1, self.G2])
+
+    def test_anchors_that_disagree_report_the_line_between_them(self):
+        # G1 has an item line below it only, G3 an item line above it only. The
+        # two anchors state opposite layouts, so the line between them (G2) is
+        # reported. The anchored lines still read their own neighbour.
+        self._assert_both_modes(self.TWO_ITEMS, self.CONFLICTING,
+                                [(0, self.G1), (None, None), (1, self.G3)],
+                                [self.G1, self.G3])
+
+    def test_a_bare_gtin_line_with_no_anchor_is_reported(self):
+        self._assert_both_modes(self.TWO_ITEMS, self.NO_ANCHOR,
+                                [(None, None)], [None, None])
 
 
 class GtinLeadingZerosTest(unittest.TestCase):

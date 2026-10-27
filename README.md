@@ -377,8 +377,15 @@ name", not as a recall rate on real extractor output.
   line decides, on a token boundary, but a part number the line only mentions in
   passing does not decide: when the line holds one item's part number and
   exactly one other item's description words, the line is ambiguous and the GTIN
-  is reported. A bare GTIN line is read with the line above it only when the
-  line below names no item. When no part number stands on the line, the
+  is reported. A bare GTIN line (keyword and number, nothing else) reads the
+  neighbour that names an item: the line above, or the line below it. A bare
+  line with an item-naming line on exactly one side is anchored, and it reads
+  that neighbour. The anchored lines also state the mail's layout, because a
+  supplier prints every EAN on the same side of its position: when every anchor
+  reads the line above, a bare line with item lines on both sides reads the line
+  above too, and when every anchor reads the line below, such a line reads the
+  line below. A mail with no anchor, or with anchors that disagree, reports the
+  line between two items. When no part number stands on the line, the
   description decides, and only when exactly one item matches. A tie, or no
   match at all, is reported with no item, and so is every GTIN for an item this
   module appended. One item in the extraction is not a reason to attach.

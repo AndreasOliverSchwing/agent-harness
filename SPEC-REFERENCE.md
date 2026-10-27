@@ -258,11 +258,16 @@ holds one item's part number and exactly one OTHER item's description words,
 the line is ambiguous and the GTIN is reported (`Dichtungssatz passend für
 AC-44170` names the gasket, not AC-44170).
 
-- A bare GTIN line (keyword and number, nothing else) is read with the line
-  directly above it, because a supplier prints it under the position. It takes
-  that line only when the line below it names no item: in a list that prints
-  the GTIN above its own position line, the line above belongs to the previous
-  position.
+- A bare GTIN line (keyword and number, nothing else) names no product, so it
+  reads the neighbour that names an item: the line directly above it, or the
+  line directly below it. A bare line with an item-naming line on exactly ONE
+  side is anchored, and it reads that neighbour. The anchored lines also state
+  the mail's layout, because a supplier prints every EAN on the same side of its
+  position: when every anchor reads the line above, a bare line with item lines
+  on BOTH sides reads the line above too; when every anchor reads the line
+  below, such a line reads the line below. A mail with no anchor, or with
+  anchors that disagree, reports the line between two items, because the line
+  above belongs to the previous position.
 - When no part number stands on the line, the description decides, and only
   when exactly one item reaches the match ratio.
 - A tie, or no match at all, is reported with `item_index` null. Nothing is

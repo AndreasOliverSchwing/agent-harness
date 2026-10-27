@@ -1679,10 +1679,19 @@ def _check_missing_gtins(items, origins, source_text, apply):
     must not move a GTIN to another product. A tie, or no match at all, is
     reported with item_index None and nothing is written.
 
-    A bare GTIN line is read with the line above it only when the line below it
-    names no item. In a list that prints the GTIN above its own position line,
-    the line above belongs to the previous position, and borrowing it gave the
-    next position's number to the wrong item (S9').
+    A bare GTIN line is one whose line holds nothing but the keyword and the
+    number. It names no product of its own, so it reads the neighbour that names
+    an item: the line above or the line below it. A bare line with an item-
+    naming line on exactly ONE side is anchored, and it reads that neighbour.
+
+    The anchored lines also state the mail's layout, because a supplier prints
+    every EAN on the same side of its position. When every anchor reads the line
+    above, the mail prints the EAN under its position, and a bare line with item
+    lines on BOTH sides reads the line above. When every anchor reads the line
+    below, the mail prints the EAN above its position, and such a line reads the
+    line below. A mail with no anchor, or with anchors that disagree, states no
+    layout: the line between two items is reported, because borrowing the line
+    above gave the next position's number to the wrong item (S9').
 
     An item this module appended is never a target: its fields come from a bare
     link, so it states no product that a GTIN could belong to.
@@ -1712,35 +1721,36 @@ def _check_missing_gtins(items, origins, source_text, apply):
     facts = {}
     owners = {}
     quotes = {}
-    named_below = {}
     attached = set()
+    named_above, named_below, layout = _bare_gtin_layout(
+        candidates, items, origins, lines, facts, item_words)
     for gtin, line_index, bare in candidates:
         form = gtin14(gtin)
         if form in carried:
             continue
         line = lines[line_index].strip()
-        previous = ""
-        if line_index and bare:
-            # A bare GTIN line takes the line above it only when the line below
-            # names no item. A list that prints the GTIN above its own position
-            # line otherwise gave the next position's number to the item above
-            # it (S9').
-            names = named_below.get(line_index)
-            if names is None:
-                below = (lines[line_index + 1].strip()
-                         if line_index + 1 < len(lines) else "")
-                names = bool(below) and _names_an_item(
-                    items, origins, below, facts, item_words)
-                named_below[line_index] = names
-            if not names:
-                previous = lines[line_index - 1].strip()
+        neighbour = ""
+        if bare:
+            # A bare GTIN line reads the neighbour that names an item. The
+            # mail's layout decides the line that has an item line on both
+            # sides; a line the layout cannot place stays reported (S9'a
+            # follow-up).
+            above = named_above[line_index]
+            below = named_below[line_index]
+            if above and below:
+                above = layout == "above"
+                below = layout == "below"
+            if above:
+                neighbour = lines[line_index - 1].strip()
+            elif below:
+                neighbour = lines[line_index + 1].strip()
         if line_index not in quotes:
             quotes[line_index] = _quote(line)
         key = (line_index, bare)
         if key in owners:
             index, note = owners[key]
         else:
-            index, note = _gtin_owner(items, origins, previous or line,
+            index, note = _gtin_owner(items, origins, neighbour or line,
                                       facts, item_words)
             owners[key] = (index, note)
         if index is not None and index in attached:
@@ -1859,6 +1869,51 @@ def _line_tokens(facts, text):
     return cached
 
 
+def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words):
+    """Return (names_above, names_below, layout) for the bare GTIN lines.
+
+    names_above and names_below map the index of a bare GTIN line to whether the
+    line directly above / below it names an item of the extraction. layout is
+    "above" when every anchored bare line reads the line above it, "below" when
+    every anchored one reads the line below it, and None when no bare line is
+    anchored or the anchors disagree.
+
+    A bare line is anchored when exactly one of its two neighbours names an
+    item: that neighbour is the product the number belongs to. A line with item-
+    naming neighbours on both sides states no owner of its own, so the mail's
+    layout decides it. A supplier prints every EAN on the same side of its
+    position, so the anchored lines are what the mail itself says about that
+    side (S9'a follow-up).
+
+    Every line is tokenised at most once, through the caller's facts cache, so
+    the pass costs the source's own length.
+    """
+    names_above = {}
+    names_below = {}
+    for _number, line_index, bare in candidates:
+        if not bare:
+            continue
+        if line_index not in names_above:
+            above = lines[line_index - 1].strip() if line_index else ""
+            names_above[line_index] = bool(above) and _names_an_item(
+                items, origins, above, facts, item_words)
+        if line_index not in names_below:
+            below = (lines[line_index + 1].strip()
+                     if line_index + 1 < len(lines) else "")
+            names_below[line_index] = bool(below) and _names_an_item(
+                items, origins, below, facts, item_words)
+    directions = set()
+    for line_index, above in names_above.items():
+        below = names_below[line_index]
+        if above and not below:
+            directions.add("above")
+        elif below and not above:
+            directions.add("below")
+    if len(directions) == 1:
+        return names_above, names_below, directions.pop()
+    return names_above, names_below, None
+
+
 def _gtin_owner(items, origins, match_line, facts, item_words):
     """Return (index, note) for the item a GTIN line names, or (None, note).
 
@@ -1873,9 +1928,9 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
     product on the line. Nothing is written for an ambiguous line (S9').
 
     A bare GTIN line (keyword and number, nothing else) names no product of its
-    own: the supplier prints it under the position it belongs to. Such a line is
-    read together with the line directly above it, which the caller passes as
-    match_line, and only when the line below names no item.
+    own: the supplier prints it under or above the position it belongs to. Such
+    a line is read together with the neighbour that names an item, which the
+    caller passes as match_line (S9'a follow-up).
 
     When neither line names a part number, the description decides, but only
     when exactly one item reaches MATCH_RATIO. A tie, or no match at all, is
