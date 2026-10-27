@@ -28,6 +28,19 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
 
+
+def ground_write(*args, **kwargs):
+    """Call ground() in write mode.
+
+    The scoring tests assert what ground() writes into a case, and the three
+    value-writing checks only write with apply=True. The bench itself scores
+    caught in the default mode and corrected with apply=True; see
+    bench/grounding/run.py.
+    """
+    kwargs.setdefault("apply", True)
+    return G.ground(*args, **kwargs)
+
+
 RUN_PATH = os.path.join(REPO, "bench", "grounding", "run.py")
 
 # A digit run a case could mean as a GTIN: the four GTIN lengths, not glued to
@@ -216,7 +229,7 @@ class RedactedLinkCasesTest(unittest.TestCase):
 
     def test_a_shared_prefix_stays_flagged_and_is_not_restored(self):
         case = self.cases["redacted-02"]
-        checked, findings = G.ground(case["extractor_output"],
+        checked, findings = ground_write(case["extractor_output"],
                                      case["source_text"])
         self.assertEqual([f["action"] for f in findings], ["flagged"])
         self.assertEqual([f["item_index"] for f in findings], [0])
@@ -227,7 +240,7 @@ class RedactedLinkCasesTest(unittest.TestCase):
 
     def test_a_unique_match_is_restored(self):
         case = self.cases["redacted-01"]
-        checked, findings = G.ground(case["extractor_output"],
+        checked, findings = ground_write(case["extractor_output"],
                                      case["source_text"])
         self.assertEqual([f["action"] for f in findings], ["restored"])
         self.assertEqual(R.strip_ignored(checked), case["gold"])
@@ -235,7 +248,7 @@ class RedactedLinkCasesTest(unittest.TestCase):
 
     def test_two_cut_links_are_restored_on_their_own_item(self):
         case = self.cases["redacted-04"]
-        _checked, findings = G.ground(case["extractor_output"],
+        _checked, findings = ground_write(case["extractor_output"],
                                       case["source_text"])
         self.assertEqual([f["action"] for f in findings],
                          ["restored", "restored"])

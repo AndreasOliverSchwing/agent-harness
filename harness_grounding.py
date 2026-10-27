@@ -45,7 +45,19 @@ digits behind it groups thousands ("1.000" and "1,000" are 1000) and one, two,
 four or more digits are a fraction ("1,5" is 1.5). A value above 10**9 or a
 digit run longer than 12 is not a quantity, so untrusted text cannot raise.
 ground() raises TypeError when extraction is not a dict, when extraction["items"]
-is not a list, or when source_text is not a str.
+is not a list, when source_text is not a str, or when apply is not a bool.
+
+ground() only SUGGESTS by default. Three checks would write a value into the
+extraction — SET_MULTIPLIED, MISSING_GTIN and the quantity of an item appended
+for an UNCOVERED_LINK — and each writes it only when the caller passes
+apply=True. With the default apply=False the check records a "suggested"
+finding instead: its new_value is the value apply=True would write, and every
+item keeps exactly the value the caller passed in. Everything those checks do
+that writes no extraction value still happens in both modes: the item is marked
+uncertain, the placeholder item for an uncovered link is appended, and a GTIN
+that no item can take is still reported. A producer that shows a suggestion to a
+human, or that quotes the extraction before a human agrees, calls ground() with
+no flag and reads the finding.
 
 THE FINDING CONTRACT. Every finding from every check carries exactly those
 eight keys and no others. The rules, once, for all six checks:
@@ -76,7 +88,8 @@ different numbers, whatever its code. Read both; never assume they are equal.
 
 An appended item never invents a part number or a description. A marketplace id
 belongs in other_ids, so an item added for an uncovered link carries
-other_ids ["ASIN:..."], the link, the quantity and the unit, nothing else.
+other_ids ["ASIN:..."], the link and, with apply=True, the quantity and the unit.
+Nothing else.
 
 Codes and actions in this module:
 
@@ -91,9 +104,15 @@ Codes and actions in this module:
                                  a link. It is attached to the best-matching
                                  item, which is marked uncertain. field is
                                  "gtin" or "other_ids", new_value the GTIN.
+    MISSING_GTIN  / "suggested"  the same attachment with apply=False. field and
+                                 new_value name the key and the value apply=True
+                                 would write, item_index and input_index the item
+                                 it would go to. The item is marked uncertain
+                                 and keeps its own gtin and other_ids.
     MISSING_GTIN  / "reported"   same, but no item could take it. The finding
                                  has item_index None, both value slots None and
                                  nothing is changed; evidence names the GTIN.
+                                 This is the same in both modes.
     REDACTED_LINK / "restored"   an item link was cut by a redaction
                                  placeholder such as "[Telefon]" and exactly
                                  one source link matches the text before and
@@ -106,6 +125,16 @@ Codes and actions in this module:
     UNCOVERED_LINK / "added"     a product link in the source that no item
                                  covers. A new item is appended and marked
                                  uncertain. field is "link", new_value the link.
+                                 With apply=False the item carries no quantity
+                                 and no unit; the quantity read for the link
+                                 follows as its own "suggested" finding.
+    UNCOVERED_LINK / "suggested" the quantity read for that link, with
+                                 apply=False. field is "quantity", old_value
+                                 None, new_value the quantity, item_index the
+                                 appended item, input_index None. It follows the
+                                 "added" finding of its own link directly, and
+                                 its evidence names the unit word apply=True
+                                 writes. Nothing is written.
     SET_MULTIPLIED / "corrected" the source says "N x M" and the item is an
                                  M-pack with quantity N*M, and the set line
                                  belongs to that item (the item is grounded on
@@ -113,6 +142,10 @@ Codes and actions in this module:
                                  pack marker sits on that same line). The
                                  quantity becomes N, the unit "set", and the
                                  item is marked uncertain. field is "quantity".
+    SET_MULTIPLIED / "suggested" the same correction with apply=False. field is
+                                 "quantity", old_value the item's quantity,
+                                 new_value the N apply=True would write; the
+                                 quantity and the unit stay exactly as given.
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
@@ -138,7 +171,8 @@ the caller keeps the original and the module never mutates what it was given.
 Findings come in a stable order: VARIANT_SPLIT in item order, then
 UNGROUNDED_ID in item order, then REDACTED_LINK in item order, then
 UNCOVERED_LINK in source order, then SET_MULTIPLIED in source order, then
-MISSING_GTIN in source order.
+MISSING_GTIN in source order. The quantity suggestion of an appended item
+follows its own "added" finding directly, so the pair for one link is adjacent.
 
 VARIANT_SPLIT runs first because it is the only check that removes an item, so
 every later item_index is already final. UNGROUNDED_ID runs before any item is
@@ -179,6 +213,11 @@ MIN_WORD_LEN = 4
 # Share of the shorter word set that two texts must have in common. Measured
 # over the shorter set so a long source line cannot drown a short description.
 MATCH_RATIO = 0.5
+
+# The unit word an item appended for an uncovered link carries. The source's own
+# unit word is not read yet, so every appended item states this one, and the
+# suggested quantity names it: the reader must know what apply=True writes.
+APPENDED_UNIT = "piece"
 
 # Longest quote a finding's evidence carries. A finding's evidence is one short
 # quotable sentence (SPEC-REFERENCE.md), and a hostile mail can put 100 KB on one
@@ -745,19 +784,27 @@ def _marketplace_of(host):
     return None
 
 
-def ground(extraction, source_text):
+def ground(extraction, source_text, *, apply=False):
     """Check extraction against source_text. Return (checked, findings).
 
     checked is a deep copy of extraction with flags and attachments applied.
     The input dict is never modified. findings is a list of finding dicts in a
     stable order; it is empty when the extraction is fully grounded.
 
+    apply selects the mode. With the default apply=False the three checks that
+    would write an extraction value — SET_MULTIPLIED, MISSING_GTIN and the
+    quantity of an item appended for an UNCOVERED_LINK — record a "suggested"
+    finding instead, and every item keeps the value the caller passed in. With
+    apply=True they write the value, as "corrected", "attached" and "added".
+    A "suggested" finding's new_value is the value apply=True would write.
+
     A wrong input type raises TypeError. Coercing it would turn a caller's bug
     into an empty, "clean" result: a bare list or a tuple of items would come
     back as {"items": []} with no finding, and bytes as a source would flag
-    every id. The three arguments are checked, not guessed:
+    every id. The arguments are checked, not guessed:
 
-        ground(extraction: dict, source_text: str) -> (dict, list)
+        ground(extraction: dict, source_text: str, *, apply: bool = False)
+              -> (dict, list)
 
     extraction["items"] must be a list when the key is present. A missing
     "items" key is allowed and returns an empty list, because the data model
@@ -772,6 +819,12 @@ def ground(extraction, source_text):
     if "items" in extraction and not isinstance(extraction["items"], list):
         raise TypeError('extraction["items"] must be a list, not %s'
                         % type(extraction["items"]).__name__)
+    # A flag that is not a bool is a caller bug, not a mode. "false" and 0 would
+    # both read as a truthy string and an int, and the caller would not see why
+    # the module wrote a value it was told to suggest.
+    if not isinstance(apply, bool):
+        raise TypeError("apply must be a bool, not %s"
+                        % type(apply).__name__)
 
     checked = copy.deepcopy(extraction)
     items = checked.setdefault("items", [])
@@ -787,9 +840,9 @@ def ground(extraction, source_text):
     findings.extend(_check_variant_split(items, origins))
     findings.extend(_check_ids(items, origins, source_text))
     findings.extend(_check_redacted_links(items, origins, source_text))
-    findings.extend(_check_uncovered_links(items, origins, source_text))
-    findings.extend(_check_set_multiplied(items, origins, source_text))
-    findings.extend(_check_missing_gtins(items, origins, source_text))
+    findings.extend(_check_uncovered_links(items, origins, source_text, apply))
+    findings.extend(_check_set_multiplied(items, origins, source_text, apply))
+    findings.extend(_check_missing_gtins(items, origins, source_text, apply))
     return checked, findings
 
 
@@ -954,7 +1007,7 @@ def _quote(text, limit=QUOTE_LIMIT):
     return text[:limit - 1].rstrip() + "\u2026"
 
 
-def _check_uncovered_links(items, origins, source_text):
+def _check_uncovered_links(items, origins, source_text, apply):
     """UNCOVERED_LINK: add an item for a product link that no item covers.
 
     A product link in the source is a position the extractor missed. The item
@@ -967,6 +1020,12 @@ def _check_uncovered_links(items, origins, source_text):
     link with no quantity of its own gets none: a single "4x" in front of two
     links belongs to the first one only. The marketplace id goes into
     other_ids: it is not a part number and not a description.
+
+    The quantity is written only with apply=True. The appended item itself is
+    written in both modes, because it holds no extraction value the caller gave
+    us: it is the record of a link the extraction missed. With apply=False it
+    carries the link, other_ids and uncertain, and the quantity follows as its
+    own "suggested" finding directly after the "added" one.
 
     The links the items already cover are indexed once, in a set of id forms and
     a set of cleaned urls. Asking "does some item cover this link?" is then a
@@ -994,16 +1053,17 @@ def _check_uncovered_links(items, origins, source_text):
             continue
         if link["line_index"] not in quotes:
             quotes[link["line_index"]] = _quote(link["line"])
-        items.append({
+        quantity = _link_quantity(lines, link["line_index"], link["segment"],
+                                  link["first_on_line"], link["only_on_line"])
+        appended = {
             "other_ids": [link["link_id"]],
             "link": url,
-            "quantity": _link_quantity(lines, link["line_index"],
-                                       link["segment"],
-                                       link["first_on_line"],
-                                       link["only_on_line"]),
-            "unit": "piece",
             "uncertain": True,
-        })
+        }
+        if apply:
+            appended["quantity"] = quantity
+            appended["unit"] = APPENDED_UNIT
+        items.append(appended)
         origins.append(None)
         covered_urls.add(url.lower())
         _add_flat_forms(covered_forms, link["link_id"], form_lengths)
@@ -1012,6 +1072,17 @@ def _check_uncovered_links(items, origins, source_text):
             evidence=quotes[link["line_index"]] or url,
             field="link",
             new_value=url,
+            item_index=len(items) - 1,
+            input_index=None))
+        if apply or quantity is None:
+            continue
+        findings.append(_finding(
+            "UNCOVERED_LINK", "suggested",
+            evidence="the source reads a quantity of %s for this link, with "
+                     "the unit word \"%s\"" % (quantity, APPENDED_UNIT),
+            field="quantity",
+            old_value=None,
+            new_value=quantity,
             item_index=len(items) - 1,
             input_index=None))
     return findings
@@ -1089,12 +1160,18 @@ def _add_flat_forms(forms, value, form_lengths):
             forms.add(flat[start:start + length])
 
 
-def _check_set_multiplied(items, origins, source_text):
+def _check_set_multiplied(items, origins, source_text, apply):
     """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces.
 
     The source writes "quantity: 28 x 5" for 28 sets of 5. An extractor that
     reports 140 pieces has lost the set, and the quote then prices 140 single
     items. The quantity is set back to the number of sets.
+
+    The write happens only with apply=True. With apply=False the finding is
+    "suggested": old_value is the quantity the item holds, new_value the number
+    of sets apply=True would write, and the item keeps its own quantity and
+    unit. The item is marked uncertain either way, because the source does not
+    support the value it holds.
 
     Three rules keep the correction honest. The pack size comes from the source
     text only: a pack word in the extractor's description is the extractor's
@@ -1174,16 +1251,19 @@ def _check_set_multiplied(items, origins, source_text):
                     continue
                 old = item.get("quantity")
                 old_unit = item.get("unit")
-                item["quantity"] = outer
-                item["unit"] = "set"
                 item["uncertain"] = True
                 corrected.add(item_index)
+                if apply:
+                    item["quantity"] = outer
+                    item["unit"] = "set"
                 findings.append(_finding(
-                    "SET_MULTIPLIED", "corrected",
+                    "SET_MULTIPLIED", "corrected" if apply else "suggested",
                     evidence="source says \"%s\": %d sets of %d, so the "
-                             "quantity is %d sets and not %d pieces; "
+                             "quantity %s %d sets and not %d pieces; "
                              "unit \"%s\" -> \"set\""
-                             % (match.group(0), outer, pack, outer, product,
+                             % (match.group(0), outer, pack,
+                                "is" if apply else "would be",
+                                outer, product,
                                 old_unit if isinstance(old_unit, str)
                                 and old_unit.strip() else "piece"),
                     field="quantity",
@@ -1452,8 +1532,14 @@ def _alnum_bounds(line):
     return (first, last)
 
 
-def _check_missing_gtins(items, origins, source_text):
+def _check_missing_gtins(items, origins, source_text, apply):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
+
+    The attachment is written only with apply=True. With apply=False the finding
+    is "suggested": field and new_value name the key and the value apply=True
+    would write, the item is marked uncertain, and its own gtin and other_ids
+    stay exactly as the caller gave them. A GTIN that no item can take is
+    "reported" in both modes, because neither mode writes anything.
 
     The target item is the one the GTIN's line names. The part number on the
     line decides first, on a token boundary: a supplier line carries the part
@@ -1507,8 +1593,10 @@ def _check_missing_gtins(items, origins, source_text):
                                       facts, item_words)
             owners[key] = (index, note)
         if index is not None and index in attached:
-            note = ("the line names item %d, which already took a GTIN from "
-                    "the source" % index)
+            note = ("the line names item %d, which already %s a GTIN from the "
+                    "source"
+                    % (index, "took" if apply
+                       else "has a suggestion for"))
             index = None
         evidence = "%s (%s)" % (quotes[line_index], note) if line else \
             "GTIN %s occurs in the source text (%s)" % (gtin, note)
@@ -1523,18 +1611,21 @@ def _check_missing_gtins(items, origins, source_text):
 
         item = items[index]
         if normalize_id(item.get("gtin")):
-            others = _as_list(item.get("other_ids"))
-            others.append(gtin)
-            item["other_ids"] = others
             field = "other_ids"
         else:
-            item["gtin"] = gtin
             field = "gtin"
+        if apply:
+            if field == "other_ids":
+                others = _as_list(item.get("other_ids"))
+                others.append(gtin)
+                item["other_ids"] = others
+            else:
+                item["gtin"] = gtin
         item["uncertain"] = True
         carried.add(form)
         attached.add(index)
         findings.append(_finding(
-            "MISSING_GTIN", "attached",
+            "MISSING_GTIN", "attached" if apply else "suggested",
             evidence=evidence,
             field=field,
             new_value=gtin,

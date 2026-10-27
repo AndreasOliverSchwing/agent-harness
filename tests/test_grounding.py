@@ -32,6 +32,20 @@ sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
 
 
+def ground_write(*args, **kwargs):
+    """Call ground() in write mode.
+
+    Every test written before fix round 3 asserts what ground() WRITES: the
+    quantity it corrects, the GTIN it attaches, the item it appends with a
+    quantity. Those three checks only write with apply=True now, so those tests
+    pass the flag and keep their assertions unchanged. A test of the default
+    calls G.ground() directly; see SuggestOnlyDefaultTest.
+    """
+    kwargs.setdefault("apply", True)
+    return G.ground(*args, **kwargs)
+
+
+
 # No digit run of GTIN length: isolates the identifier checks from MISSING_GTIN.
 ID_SOURCE = """\
 Acme Tools - order confirmation
@@ -199,7 +213,7 @@ class GroundIdentifierTest(unittest.TestCase):
     def test_ground_flags_invented_part_number(self):
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "AC-9999"}]}
-        checked, findings = G.ground(extraction, ID_SOURCE)
+        checked, findings = ground_write(extraction, ID_SOURCE)
         self.assertEqual(len(findings), 1)
         finding = findings[0]
         self.assertEqual(finding["code"], "UNGROUNDED_ID")
@@ -216,7 +230,7 @@ class GroundIdentifierTest(unittest.TestCase):
     def test_ground_flags_ungrounded_gtin(self):
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "gtin": "20000004"}]}
-        checked, findings = G.ground(extraction, ID_SOURCE)
+        checked, findings = ground_write(extraction, ID_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["field"], "gtin")
         self.assertEqual(findings[0]["old_value"], "20000004")
@@ -226,14 +240,14 @@ class GroundIdentifierTest(unittest.TestCase):
         # "AC 4417" normalizes to the "AC-4417" that the source holds.
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "AC 4417"}]}
-        checked, findings = G.ground(extraction, ID_SOURCE)
+        checked, findings = ground_write(extraction, ID_SOURCE)
         self.assertEqual(findings, [])
         self.assertNotIn("uncertain", checked["items"][0])
 
     def test_ground_ignores_short_ids(self):
         # Two characters prove nothing and would flag every M8 in every mail.
         extraction = {"items": [{"description": "Hex bolt", "part_number": "M8"}]}
-        checked, findings = G.ground(extraction, ID_SOURCE)
+        checked, findings = ground_write(extraction, ID_SOURCE)
         self.assertEqual(findings, [])
         self.assertNotIn("uncertain", checked["items"][0])
 
@@ -255,7 +269,7 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
         source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "AC-441"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["old_value"], "AC-441")
         self.assertEqual(checked["items"][0]["part_number"], "AC-441")
@@ -265,14 +279,14 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
         source = "Northwind Supply\n2 x Washer 12 mm, part NW-22019\n"
         extraction = {"items": [{"description": "Washer 12 mm",
                                  "part_number": "NW-2201"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
 
     def test_ground_flags_digits_that_only_occur_inside_a_date(self):
         source = "Acme Tools\nOrder date 2026-10-26\n4 x Hex bolt M8\n"
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "2610"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["old_value"], "2610")
 
@@ -282,7 +296,7 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
                                  "part_number": "AC-4417"}]}
         for joiner in self.JOINERS:
             source = ("Acme Tools\n4 x Hex bolt M8, part AC%s4417\n" % joiner)
-            checked, findings = G.ground(extraction, source)
+            checked, findings = ground_write(extraction, source)
             self.assertEqual(findings, [], "joiner %r" % joiner)
             self.assertNotIn("uncertain", checked["items"][0],
                              "joiner %r" % joiner)
@@ -294,7 +308,7 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
             extraction = {"items": [
                 {"description": "Hex bolt M8",
                  "part_number": "AC%s4417" % joiner}]}
-            _checked, findings = G.ground(extraction, source)
+            _checked, findings = ground_write(extraction, source)
             self.assertEqual(findings, [], "joiner %r" % joiner)
 
     def test_ground_grounds_a_token_of_a_source_id(self):
@@ -303,7 +317,7 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
         source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "4417"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
 
@@ -321,7 +335,7 @@ class IdTokenPunctuationTest(unittest.TestCase):
         # not in the source.
         source = "Pos. 3: AC-4417, 8 St\u00fcck\n"
         extraction = {"items": [{"part_number": "AC-44178", "quantity": 1}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["old_value"], "AC-44178")
         self.assertTrue(checked["items"][0]["uncertain"])
@@ -329,21 +343,21 @@ class IdTokenPunctuationTest(unittest.TestCase):
     def test_a_pipe_does_not_join_two_cells_of_a_row(self):
         source = "AC-4417 | 8 | St\u00fcck\n"
         extraction = {"items": [{"part_number": "AC-4417-8", "quantity": 1}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["old_value"], "AC-4417-8")
 
     def test_a_bracket_does_not_join_an_id_to_the_quantity_beside_it(self):
         source = "Art.-Nr. 4417 (10 St\u00fcck)\n"
         extraction = {"items": [{"part_number": "4417-10", "quantity": 1}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
 
     def test_a_joiner_between_two_digits_is_one_number(self):
         # The date is one number. "1026" is the tail of it, not an id.
         source = "Order date 2026-10-26\n"
         extraction = {"items": [{"part_number": "1026"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["old_value"], "1026")
 
@@ -351,7 +365,7 @@ class IdTokenPunctuationTest(unittest.TestCase):
         # The rule stops a fragment, not a whole number.
         source = "Order date 2026-10-26\n"
         extraction = {"items": [{"part_number": "2026-10-26"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
     def test_a_joiner_after_a_letter_still_joins_the_id(self):
@@ -359,7 +373,7 @@ class IdTokenPunctuationTest(unittest.TestCase):
         # that stops the date fragment must not flag it.
         source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
         extraction = {"items": [{"part_number": "4417"}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
 
@@ -388,7 +402,7 @@ class GermanTextAlignmentTest(unittest.TestCase):
                   "Bestellung\n"
                   "Pos. 1: 4 Stück Sechskantschraube M8, Art.-Nr. AC-4417\n")
         extraction = {"items": [{"part_number": "AC-4417", "quantity": 4}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
     def test_a_sharp_s_before_an_id_does_not_raise(self):
@@ -396,7 +410,7 @@ class GermanTextAlignmentTest(unittest.TestCase):
         # raised IndexError instead of answering.
         source = "Grüße aus der Lindenstraße\nBitte liefern: AC-4417"
         extraction = {"items": [{"part_number": "AC-4417", "quantity": 1}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
     def test_a_german_signature_above_a_quoted_order_flags_nothing(self):
@@ -413,27 +427,27 @@ class GermanTextAlignmentTest(unittest.TestCase):
             {"part_number": "NW-22010", "quantity": 2},
             {"part_number": "NW-22011", "quantity": 1},
         ]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
     def test_a_sharp_s_does_not_hide_a_multiplied_set(self):
         # The same shift left "AC-44170" flagged and the set line uncorrected.
         source = "Maßband AC-44170 5er-Pack, Menge: 2 x 5"
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 10}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 2)
 
     def test_a_pdf_fi_ligature_does_not_flag_a_grounded_id(self):
         source = "Proﬁl-Schiene AC-44170, 4 Stück"
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 4}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
     def test_a_pdf_fl_ligature_does_not_flag_a_grounded_id(self):
         source = "Anﬂanschplatte AC-44170, 4 Stück"
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 4}]}
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
 
 
@@ -445,7 +459,7 @@ class GroundMissingGtinTest(unittest.TestCase):
             {"description": "Hex bolt M8"},
             {"description": "Garden hose 20 m"},
         ]}
-        checked, findings = G.ground(extraction, GTIN_SOURCE)
+        checked, findings = ground_write(extraction, GTIN_SOURCE)
         self.assertEqual([f["action"] for f in findings], ["attached", "attached"])
         self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
         self.assertEqual(checked["items"][1]["gtin"], "20000004")
@@ -456,7 +470,7 @@ class GroundMissingGtinTest(unittest.TestCase):
         # One item is not a reason to attach. The line names no product of the
         # extraction, so the GTIN is reported (S6).
         extraction = {"items": [{"description": "Garden hose"}]}
-        checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
+        checked, findings = ground_write(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(findings[0]["action"], "reported")
         self.assertIsNone(findings[0]["item_index"])
         self.assertNotIn("gtin", checked["items"][0])
@@ -466,7 +480,7 @@ class GroundMissingGtinTest(unittest.TestCase):
             {"description": "Garden hose"},
             {"description": "Paint brush"},
         ]}
-        checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
+        checked, findings = ground_write(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(len(findings), 1)
         finding = findings[0]
         self.assertEqual(finding["code"], "MISSING_GTIN")
@@ -485,7 +499,7 @@ class GroundMissingGtinTest(unittest.TestCase):
         self.assertNotIn("uncertain", checked["items"][0])
 
     def test_ground_reports_when_no_items(self):
-        checked, findings = G.ground({"items": []}, ONE_GTIN_SOURCE)
+        checked, findings = ground_write({"items": []}, ONE_GTIN_SOURCE)
         self.assertEqual(len(findings), 1)
         self.assertIsNone(findings[0]["item_index"])
         self.assertEqual(findings[0]["action"], "reported")
@@ -496,7 +510,7 @@ class GroundMissingGtinTest(unittest.TestCase):
                   "4 x Hex bolt M8  GTIN 2000000000008 and 20000004\n")
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "gtin": "20000004"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
         self.assertEqual(checked["items"][0]["gtin"], "20000004")
         self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
@@ -505,7 +519,7 @@ class GroundMissingGtinTest(unittest.TestCase):
     def test_ground_skips_gtin_already_in_other_ids(self):
         extraction = {"items": [{"description": "Widget assembly",
                                  "other_ids": ["2000000000008"]}]}
-        checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
+        checked, findings = ground_write(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
 
@@ -516,7 +530,7 @@ class GroundMissingGtinTest(unittest.TestCase):
         source = ("Northwind Supply\n"
                   "4 x Hex bolt M8  EAN 2000000000008  EAN 20000004\n")
         extraction = {"items": [{"description": "Hex bolt M8"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings],
                          ["attached", "reported"])
         self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
@@ -537,14 +551,14 @@ class GtinKeywordRuleTest(unittest.TestCase):
     def test_ground_does_not_attach_a_phone_number(self):
         source = "Northwind Supply\nTel. +49 89 12345670\n4 x Widget assembly\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
     def test_ground_does_not_attach_an_order_number(self):
         source = "Acme Tools\nOrder 20261023\n4 x Widget assembly\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
@@ -553,14 +567,14 @@ class GtinKeywordRuleTest(unittest.TestCase):
         source = ("Acme Tools\n4 x Widget assembly, EAN as printed in the "
                   "shop: https://shop.example.com/p/2000000000046\n")
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
     def test_ground_attaches_a_gtin_with_an_english_keyword(self):
         source = "Acme Tools\n4 x Widget assembly  EAN 2000000000046\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
         self.assertEqual(findings[0]["new_value"], "2000000000046")
         self.assertEqual(checked["items"][0]["gtin"], "2000000000046")
@@ -568,7 +582,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
     def test_ground_attaches_a_gtin_with_a_german_keyword(self):
         source = "Acme Tools\n4 x Widget assembly  Strichcode 2000000000046\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
         self.assertEqual(checked["items"][0]["gtin"], "2000000000046")
 
@@ -581,7 +595,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         extraction = {"items": [{"part_number": "AC-44170",
                                  "description": "Sechskantschraube M8",
                                  "quantity": 4}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
         self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
 
@@ -593,7 +607,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         extraction = {"items": [{"part_number": "AC-44170",
                                  "description": "Sechskantschraube M8",
                                  "quantity": 4}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
@@ -603,7 +617,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
             source = "Acme Tools\n4 x Widget assembly  %s 2000000000015\n" \
                      % keyword
             extraction = {"items": [{"description": "Widget assembly"}]}
-            checked, findings = G.ground(extraction, source)
+            checked, findings = ground_write(extraction, source)
             self.assertEqual([f["action"] for f in findings], ["attached"],
                              keyword)
             self.assertEqual(checked["items"][0]["gtin"], "2000000000015",
@@ -617,7 +631,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         source = ("Acme Tools\n4 x Widget assembly  %s 2000000000015\n"
                   % keyword)
         extraction = {"items": [{"description": "Widget assembly"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"], keyword)
         self.assertEqual(findings[0]["new_value"], "2000000000015", keyword)
         self.assertEqual(checked["items"][0]["gtin"], "2000000000015", keyword)
@@ -658,7 +672,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
             {"part_number": "AC-44110",
              "description": "Sechskantschraube M10 verzinkt", "quantity": 2},
         ]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["action"] for f in findings],
                          ["attached", "attached"])
         self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
@@ -676,7 +690,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
             {"part_number": "NW-22010",
              "description": "Unterlegscheibe M8 verzinkt", "quantity": 4},
         ]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["code"], "MISSING_GTIN")
         self.assertEqual(findings[0]["action"], "reported")
@@ -690,7 +704,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         source = ("Acme Tools\n"
                   "4x https://www.amazon.de/dp/B0TESTAAA1\n"
                   "EAN 2000000000015\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "MISSING_GTIN"])
         self.assertEqual(findings[1]["action"], "reported")
@@ -708,7 +722,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
             {"description": "Spare part bracket"},
             {"description": "Replacement part kit"},
         ]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(len(findings), 1)
         finding = findings[0]
         self.assertEqual(finding["code"], "MISSING_GTIN")
@@ -734,7 +748,7 @@ class GtinLeadingZerosTest(unittest.TestCase):
     def test_ground_grounds_a_gtin_written_without_its_leading_zero(self):
         extraction = {"items": [{"description": "Widget assembly",
                                  "gtin": "0200000000004"}]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_write(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["gtin"], "0200000000004")
         self.assertNotIn("uncertain", checked["items"][0])
@@ -742,14 +756,14 @@ class GtinLeadingZerosTest(unittest.TestCase):
     def test_ground_grounds_a_gtin14_of_a_gtin12_in_the_source(self):
         extraction = {"items": [{"description": "Widget assembly",
                                  "gtin": "00200000000004"}]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_write(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["gtin"], "00200000000004")
 
     def test_ground_does_not_attach_a_gtin_that_part_number_carries(self):
         extraction = {"items": [{"description": "Widget assembly",
                                  "part_number": "200000000004"}]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_write(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
@@ -757,7 +771,7 @@ class GtinLeadingZerosTest(unittest.TestCase):
         # The label names the number; it is not part of it.
         extraction = {"items": [{"description": "Widget assembly",
                                  "other_ids": ["EAN:0200000000004"]}]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_write(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["other_ids"],
                          ["EAN:0200000000004"])
@@ -773,13 +787,13 @@ class GroundContractTest(unittest.TestCase):
             {"description": "Washer 12 mm", "other_ids": ["WW-9999"]},
         ]}
         snapshot = copy.deepcopy(extraction)
-        checked, _findings = G.ground(extraction, GTIN_SOURCE)
+        checked, _findings = ground_write(extraction, GTIN_SOURCE)
         self.assertEqual(extraction, snapshot)
         self.assertIsNot(checked, extraction)
         self.assertIsNot(checked["items"][0], extraction["items"][0])
 
     def test_ground_missing_keys(self):
-        checked, findings = G.ground({"items": [{}, {"gtin": None,
+        checked, findings = ground_write({"items": [{}, {"gtin": None,
                                                      "other_ids": None}]},
                                      ID_SOURCE)
         self.assertEqual(findings, [])
@@ -787,14 +801,14 @@ class GroundContractTest(unittest.TestCase):
                                                  "other_ids": None}])
 
     def test_ground_extraction_without_items(self):
-        checked, findings = G.ground({}, "")
+        checked, findings = ground_write({}, "")
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"], [])
 
     def test_finding_shape(self):
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "AC-9999"}]}
-        _checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
+        _checked, findings = ground_write(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(len(findings), 2)
         self.assertEqual([f["code"] for f in findings],
                          ["UNGROUNDED_ID", "MISSING_GTIN"])
@@ -813,7 +827,7 @@ class FindingContractTest(unittest.TestCase):
     """One finding shape for all six checks, documented in SPEC-REFERENCE.md."""
 
     def test_every_check_uses_the_documented_keys(self):
-        checked, findings = G.ground(copy.deepcopy(ALL_CHECKS_EXTRACTION),
+        checked, findings = ground_write(copy.deepcopy(ALL_CHECKS_EXTRACTION),
                                      ALL_CHECKS_SOURCE)
         codes = sorted(set(f["code"] for f in findings))
         self.assertEqual(codes, ["MISSING_GTIN", "REDACTED_LINK",
@@ -836,7 +850,7 @@ class FindingContractTest(unittest.TestCase):
              "quantity": 4},
             {"description": "IO link variant", "part_number": "AC-4417"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         finding = findings[0]
         self.assertEqual(finding["code"], "VARIANT_SPLIT")
         # The finding concerns the merged-away line, so the two indexes differ.
@@ -848,7 +862,7 @@ class FindingContractTest(unittest.TestCase):
         self.assertEqual(finding["new_value"], "variant: IO link variant")
 
     def test_item_index_is_none_only_when_no_item_is_concerned(self):
-        checked, findings = G.ground({"items": [{"description": "Paint brush"},
+        checked, findings = ground_write({"items": [{"description": "Paint brush"},
                                                 {"description": "Garden hose"}]},
                                      ONE_GTIN_SOURCE)
         self.assertEqual(len(findings), 1)
@@ -1009,7 +1023,7 @@ class LinkRegexCostTest(unittest.TestCase):
         source = ("Acme Tools\n4x https://a.example.com/x"
                   + ")" * self.LENGTH + "y\n")
         started = time.perf_counter()
-        G.ground({"items": []}, source)
+        ground_write({"items": []}, source)
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters"
@@ -1031,7 +1045,7 @@ class IdentifierRegexCostTest(unittest.TestCase):
     def test_ground_is_linear_on_a_long_space_run_after_a_quantity_label(self):
         source = "Acme Tools\nqty" + " " * self.LENGTH
         started = time.perf_counter()
-        G.ground({"items": []}, source)
+        ground_write({"items": []}, source)
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters"
@@ -1090,7 +1104,7 @@ class GtinKeywordCostTest(unittest.TestCase):
                   "4 x Widget assembly  EAN 2000000000015\n"
                   % (" " * self.SPACES))
         started = time.perf_counter()
-        checked, _findings = G.ground(
+        checked, _findings = ground_write(
             {"items": [{"description": "Widget assembly"}]}, source)
         elapsed = time.perf_counter() - started
         self.assertEqual(checked["items"][0].get("gtin"), "2000000000015")
@@ -1130,7 +1144,7 @@ class SetCheckCostTest(unittest.TestCase):
                                  "part_number": "AC-4417",
                                  "quantity": 8}]}
         started = time.perf_counter()
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         elapsed = time.perf_counter() - started
         # The set line corrects the item, so the pack-marker scan ran on the
         # digit run: the test may not pass by skipping that scan.
@@ -1152,7 +1166,7 @@ class SetCheckCostTest(unittest.TestCase):
                           "description": "Hex bolt M8"})
         source = "\n".join(lines) + "\n"
         started = time.perf_counter()
-        checked, findings = G.ground({"items": items}, source)
+        checked, findings = ground_write({"items": items}, source)
         elapsed = time.perf_counter() - started
         # Every position is corrected, so the check has real work to do.
         self.assertEqual(len(findings), self.POSITIONS)
@@ -1209,7 +1223,7 @@ class HostileMailCostTest(unittest.TestCase):
             index += 1
         source = "\n".join(lines) + "\n"
         started = time.perf_counter()
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         elapsed = time.perf_counter() - started
         # Every link is uncovered, so the check has real work to do: it may not
         # pass this test by finding nothing.
@@ -1232,7 +1246,7 @@ class HostileMailCostTest(unittest.TestCase):
         extraction = {"items": [{"description": "Hex bolt M8",
                                  "part_number": "AC-4417"}]}
         started = time.perf_counter()
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         elapsed = time.perf_counter() - started
         # The line names no part number of the extraction, so every GTIN is
         # reported: the check has real work to do.
@@ -1257,7 +1271,7 @@ class HostileMailCostTest(unittest.TestCase):
              "description": "Washer"},
         ]}
         started = time.perf_counter()
-        G.ground(extraction, source)
+        ground_write(extraction, source)
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters beside a long id"
@@ -1268,7 +1282,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""
 
     def test_ground_adds_item_with_quantity_from_same_line(self):
-        checked, findings = G.ground({"items": []}, LINK_SOURCE)
+        checked, findings = ground_write({"items": []}, LINK_SOURCE)
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "UNCOVERED_LINK"])
         self.assertEqual(findings[0]["action"], "added")
@@ -1290,14 +1304,14 @@ class GroundUncoveredLinkTest(unittest.TestCase):
 
     def test_ground_takes_link_quantity_from_previous_line(self):
         # The line above the eBay link holds nothing but "2".
-        checked, findings = G.ground({"items": []}, LINK_SOURCE)
+        checked, findings = ground_write({"items": []}, LINK_SOURCE)
         self.assertEqual(findings[1]["new_value"], EBAY_LINK)
         self.assertEqual(findings[1]["item_index"], 1)
         self.assertEqual(checked["items"][1]["quantity"], 2)
 
     def test_ground_link_without_quantity_gets_none(self):
         source = "Acme Tools\nhttps://www.amazon.de/dp/B0TEST1234\n"
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual(len(findings), 1)
         self.assertIsNone(checked["items"][0]["quantity"])
 
@@ -1308,7 +1322,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
                   "2 St\u00fcck\n"
                   "https://www.amazon.de/dp/B0TESTAAA2\n"
                   "3 St\u00fcck\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [2, 3])
 
@@ -1318,7 +1332,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         source = ("https://www.amazon.de/dp/B0TESTAAA1\n"
                   "2 St\u00fcck\n"
                   "https://www.amazon.de/dp/B0TESTAAA2\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [2, None])
 
@@ -1330,7 +1344,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
                   "2 St\u00fcck\n"
                   "\n"
                   "https://www.amazon.de/dp/B0TESTAAA2\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [None, None])
 
@@ -1338,13 +1352,13 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         # S11: the quantity pattern needs a left boundary, or "1.000.000"
         # matches its last group "000" and reads as 0.
         source = "1.000.000 St\u00fcck https://www.amazon.de/dp/B0TESTAAA1\n"
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual(checked["items"][0]["quantity"], 1000000)
 
     def test_a_million_above_a_link_is_a_million(self):
         source = ("1.000.000 St\u00fcck\n"
                   "https://www.amazon.de/dp/B0TESTAAA1\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual(checked["items"][0]["quantity"], 1000000)
 
     def test_the_second_link_on_a_line_takes_no_quantity_from_below(self):
@@ -1353,7 +1367,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         source = ("4x https://www.amazon.de/dp/B0TESTAAA1 "
                   "https://www.amazon.de/dp/B0TESTAAA2\n"
                   "2 St\u00fcck\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [4, None])
 
@@ -1362,21 +1376,21 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         extraction = {"items": [{"description": "Hex bolt",
                                  "part_number": "B0TEST1234"}]}
         source = "Acme Tools\n4x https://www.amazon.de/dp/B0TEST1234\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 1)
 
     def test_ground_does_not_add_covered_link_by_same_link(self):
         extraction = {"items": [{"description": "Hex bolt",
                                  "link": AMAZON_LINK}]}
-        checked, findings = G.ground(extraction, LINK_SOURCE)
+        checked, findings = ground_write(extraction, LINK_SOURCE)
         # Only the eBay link is new.
         self.assertEqual([f["new_value"] for f in findings], [EBAY_LINK])
         self.assertEqual(len(checked["items"]), 2)
 
     def test_ground_ignores_link_that_is_not_a_product(self):
         source = "Acme Tools\nsee https://www.example.com/orders/4711\n"
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"], [])
 
@@ -1384,7 +1398,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         # QA 12: the appended item must hold the address, not "](" glue.
         source = ("Acme Tools\n"
                   "4x [Hex bolt M8](https://www.amazon.de/dp/B0TEST1234)\n")
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual([f["new_value"] for f in findings], [AMAZON_LINK])
         self.assertEqual(checked["items"][0]["link"], AMAZON_LINK)
         self.assertEqual(checked["items"][0]["quantity"], 4)
@@ -1398,7 +1412,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
             "description": "Widget",
             "link": "https://de.aliexpress.com/item/1[Telefon]234567"}]}
         source = "Acme Tools\n%s\n" % ALIEXPRESS_LINK
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["REDACTED_LINK"])
         self.assertEqual(findings[0]["action"], "restored")
         self.assertEqual(findings[0]["item_index"], 0)
@@ -1420,7 +1434,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
         source = ("Acme Tools - order confirmation\n"
                   "https://www.ebay.de/itm/123456789001\n"
                   "https://www.ebay.de/itm/198765402101\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         item = checked["items"][0]
         self.assertEqual(item["link"], "https://www.ebay.de/itm/198765402101")
         restored = [f for f in findings if f["code"] == "REDACTED_LINK"]
@@ -1442,7 +1456,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
         source = ("Acme Tools - order confirmation\n"
                   "https://de.aliexpress.com/item/1005001234567\n"
                   "https://de.aliexpress.com/item/1005009994567\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         item = checked["items"][0]
         self.assertEqual(item["link"], cut_link)
         flagged = [f for f in findings if f["code"] == "REDACTED_LINK"]
@@ -1459,7 +1473,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
             "description": "Widget",
             "link": "https://a[1].example.com/x"}]}
         source = "Acme Tools\nhttps://a.example.com/x\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["link"], "https://a[1].example.com/x")
 
@@ -1471,7 +1485,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
             "description": "Widget",
             "link": "https://de.aliexpress.com/item/9[Telefon]999999"}]}
         source = "Acme Tools\n%s\n" % EBAY_LINK
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings],
                          ["REDACTED_LINK", "UNCOVERED_LINK"])
         self.assertEqual(findings[0]["action"], "flagged")
@@ -1493,7 +1507,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
                     "?spm=a2g0o.detail.1000014.3")
         extraction = {"items": [{"description": "Widget", "link": cut_link}]}
         source = "Acme Tools - order confirmation\n%s\n" % source_link
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["REDACTED_LINK"])
         self.assertEqual(findings[0]["action"], "restored")
         self.assertEqual(findings[0]["new_value"],
@@ -1514,7 +1528,7 @@ class GroundRedactedLinkTest(unittest.TestCase):
                   "?spm=a2g0o.detail.1\n"
                   "https://de.aliexpress.com/item/1005009994567.html"
                   "?spm=a2g0o.detail.2\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         item = checked["items"][0]
         self.assertEqual(item["link"], cut_link)
         flagged = [f for f in findings if f["code"] == "REDACTED_LINK"]
@@ -1543,7 +1557,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   + long_id + " 2er-Pack\n"
                   "quantity: 4 x 2\n")
         extraction = {"items": [{"part_number": long_id, "quantity": 8}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 8)
 
@@ -1554,7 +1568,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   + long_id + " 2er-Pack\n"
                   "quantity: 4 x 2\n")
         extraction = {"items": [{"part_number": long_id, "quantity": 8}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 4)
 
@@ -1562,7 +1576,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         extraction = {"items": [{
             "description": "Hex bolt set, 5-pack",
             "part_number": "AC-4417", "quantity": 140, "unit": "piece"}]}
-        checked, findings = G.ground(extraction, SET_SOURCE)
+        checked, findings = ground_write(extraction, SET_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "corrected")
         self.assertEqual(findings[0]["field"], "quantity")
@@ -1576,7 +1590,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = "Acme Tools\nMenge: 12 x 5\nWasher pack of 5\n"
         extraction = {"items": [{"description": "Washer pack of 5",
                                  "quantity": 60}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 12)
 
@@ -1591,7 +1605,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         extraction = {"items": [{"part_number": "AC-4417",
                                  "description": "Hex bolt set, 5-pack",
                                  "quantity": 140}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"],
                          label)
         self.assertEqual(findings[0]["new_value"], 28, label)
@@ -1624,7 +1638,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "Hex bolt, part AC-4417\n")
         extraction = {"items": [{"description": "Hex bolt 5-pack",
                                  "part_number": "AC-4417", "quantity": 140}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 140)
         self.assertNotIn("uncertain", checked["items"][0])
@@ -1638,7 +1652,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "Washer 12 mm, 2-pack, part WW-2201\n")
         extraction = {"items": [{"description": "Washer 12 mm, 2-pack",
                                  "part_number": "WW-2201", "quantity": 8}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(findings[0]["old_value"], 8)
@@ -1654,7 +1668,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
             extraction = {"items": [{"description": "Hex bolt set",
                                      "part_number": "AC-4417",
                                      "quantity": 140}]}
-            checked, findings = G.ground(extraction, source)
+            checked, findings = ground_write(extraction, source)
             self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"],
                              marker)
             self.assertEqual(checked["items"][0]["quantity"], 28, marker)
@@ -1667,7 +1681,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "Hex bolt set, 10-pack, part AC-4417\n")
         extraction = {"items": [{"description": "Hex bolt set",
                                  "part_number": "AC-4417", "quantity": 140}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 140)
 
@@ -1675,7 +1689,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         extraction = {"items": [{
             "description": "Hex bolt set, 5-pack",
             "part_number": "AC-4417", "quantity": 28}]}
-        checked, findings = G.ground(extraction, SET_SOURCE)
+        checked, findings = ground_write(extraction, SET_SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 28)
 
@@ -1690,7 +1704,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         ]}
         source = ("AC-44170 Schraube 8 St\u00fcck\n"
                   "NW-22010 Kabelbinder 2er-Pack, Menge: 4 x 2")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 8)
         self.assertNotIn("unit", checked["items"][0])
@@ -1704,7 +1718,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("AC-44170 Schraube\n"
                   "Menge: 4 x 2\n"
                   "NW-22010 Kabelbinder 2er-Pack, 1 St\u00fcck")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 8)
         self.assertNotIn("uncertain", checked["items"][0])
@@ -1714,7 +1728,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         # below it belongs to this item.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
         source = "AC-44170 2-pack\nMenge: 4 x 2"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(checked["items"][0]["unit"], "set")
@@ -1724,7 +1738,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         # line, which is how a supplier writes a position.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
         source = "Menge: 4 x 2\nAC-44170 2-pack"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(checked["items"][0]["unit"], "set")
@@ -1739,7 +1753,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         ]}
         source = ("AC-44170 Schraube 2er-Pack, 8 St\u00fcck\n"
                   "NW-22010 Kabelbinder 2er-Pack, Menge: 4 x 2")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 8)
         self.assertNotIn("unit", checked["items"][0])
@@ -1755,7 +1769,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("NW-22010 Kabelbinder 2er-Pack\n"
                   "Menge: 3 x 2\n"
                   "AC-44170 Schraube M8, 6 Packungen \u00e0 2er-Pack\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 3)
         self.assertEqual(checked["items"][1]["quantity"], 6)
@@ -1773,7 +1787,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("NW-22010 Kabelbinder 2er-Pack\n"
                   "Menge: 3 x 2\n"
                   "AC-44170 Schraube M8, 6 Packungen \u00e0 2er-Pack\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 3)
         self.assertEqual(checked["items"][1]["quantity"], 6)
@@ -1789,7 +1803,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("NW-22010 Schraube M8, 8 St\u00fcck\n"
                   "Kabelbinder 2er-Pack\n"
                   "Menge: 4 x 2\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["item_index"], 1)
         self.assertEqual(checked["items"][1]["quantity"], 4)
@@ -1807,7 +1821,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "Menge: 3 x 2\n"
                   "Menge: 4 x 2\n"
                   "AC-44170 Schraube 2er-Pack, 8 St\u00fcck\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["item_index"], 1)
         self.assertEqual(checked["items"][0]["quantity"], 8)
@@ -1816,7 +1830,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
     def test_the_evidence_names_the_unit_change(self):
         # S1: the finding says what the unit becomes, not only the number.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
-        _checked, findings = G.ground(extraction, "AC-44170 2-pack\nMenge: 4 x 2")
+        _checked, findings = ground_write(extraction, "AC-44170 2-pack\nMenge: 4 x 2")
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertIn('unit "piece" -> "set"', findings[0]["evidence"])
 
@@ -1829,7 +1843,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
             "other_ids": [{"asin": "B0TESTAAA1"}, "EBAY:1"],
         }]}
         source = "AC-44170 Schraube 5er-Pack, Menge: 2 x 5\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 2)
         self.assertEqual(checked["items"][0]["other_ids"],
@@ -1841,7 +1855,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                       None, 4, b"EBAY:1"):
             extraction = {"items": [{"part_number": "AC-44170", "quantity": 10,
                                      "other_ids": [value]}]}
-            checked, _findings = G.ground(extraction,
+            checked, _findings = ground_write(extraction,
                                           "AC-44170 Schraube 5er-Pack, "
                                           "Menge: 2 x 5\n")
             self.assertEqual(checked["items"][0]["quantity"], 2,
@@ -1857,7 +1871,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "part_number": "AC-4417", "quantity": 4},
             {"description": "IO link variant", "part_number": "ac 4417"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
         self.assertEqual(findings[0]["action"], "merged")
         self.assertEqual(findings[0]["item_index"], 0)
@@ -1871,7 +1885,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "quantity": 4, "note": "checked with supplier"},
             {"description": "IO link variant", "part_number": "AC-4417"},
         ]}
-        checked, _findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, _findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(checked["items"][0]["note"],
                          "checked with supplier · variant: IO link variant")
 
@@ -1884,7 +1898,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"description": "IO link variant", "part_number": "AC-4417",
              "quantity": 2},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
 
@@ -1900,7 +1914,7 @@ class GroundVariantSplitTest(unittest.TestCase):
         ]}
         source = ("Pos. 1  AC-44170 Sechskantschraube M8 verzinkt   4 St.\n"
                   "Pos. 2  AC-44170 Sechskantschraube M8 Edelstahl  2 St.\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
         self.assertEqual([item["quantity"] for item in checked["items"]],
@@ -1912,7 +1926,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"description": "Hex bolt", "part_number": "M8", "quantity": 4},
             {"description": "Washer", "part_number": "M8"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\n")
+        checked, findings = ground_write(extraction, "Acme Tools\n")
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
 
@@ -1928,7 +1942,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"description": "Washer 12 mm brass", "part_number": "WW-2201"},
         ]}
         source = "Acme Tools\npart AC-4417\npart WW-2201\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(len(checked["items"]), 2)
         self.assertEqual([f["code"] for f in findings],
                          ["VARIANT_SPLIT", "VARIANT_SPLIT"])
@@ -1953,7 +1967,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "link": AMAZON_LINK, "gtin": "2000000000008",
              "other_ids": ["SUP-77"]},
         ]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         item = checked["items"][0]
         self.assertEqual(item["link"], AMAZON_LINK)
         self.assertEqual(item["gtin"], "2000000000008")
@@ -1979,7 +1993,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"part_number": "AC-44170", "gtin": "2000000000015"},
         ]}
         source = "Acme Tools\nPos. 1: AC-44170 Schraube M8, 4 St\u00fcck\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
         writes = [f for f in findings
                   if f["code"] == "VARIANT_SPLIT" and f["field"] == "gtin"]
@@ -1994,7 +2008,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"part_number": "AC-4417", "quantity": 4, "note": "checked"},
             {"part_number": "AC-4417", "note": "zinc plated"},
         ]}
-        checked, _findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, _findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(checked["items"][0]["note"],
                          "checked · variant: AC4417 (zinc plated)")
 
@@ -2003,7 +2017,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"part_number": "AC-4417", "quantity": 4, "unit": "piece"},
             {"part_number": "AC-4417", "unit": "set"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(checked["items"][0]["unit"], "piece")
         unit = [f for f in findings if f["field"] == "unit"]
         self.assertEqual(len(unit), 1)
@@ -2016,7 +2030,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"part_number": "AC-4417", "quantity": 4, "price": "12,50"},
             {"part_number": "AC-4417", "price": "11,90"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(checked["items"][0]["price"], "12,50")
         price = [f for f in findings if f["field"] == "price"]
         self.assertEqual(len(price), 1)
@@ -2030,7 +2044,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "price": "12,50"},
             {"part_number": "AC-4417", "unit": "Piece", "price": "12,50"},
         ]}
-        _checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        _checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual([f["field"] for f in findings], ["note"])
 
     def test_merge_keeps_survivor_value_and_reports_the_variant(self):
@@ -2043,7 +2057,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "link": EBAY_LINK},
         ]}
         source = "Acme Tools\npart AC-4417\n%s\n" % AMAZON_LINK
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         merged = [f for f in findings if f["code"] == "VARIANT_SPLIT"]
         self.assertEqual(checked["items"][0]["link"], AMAZON_LINK)
         self.assertTrue(checked["items"][0]["uncertain"])
@@ -2060,7 +2074,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"part_number": "AC-4417", "link": EBAY_LINK},
         ]}
         source = "Acme Tools\npart AC-4417\n%s\n" % AMAZON_LINK
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         conflict = [f for f in findings if f["field"] == "link"]
         self.assertEqual(len(conflict), 1)
         self.assertIsNone(conflict[0]["new_value"])
@@ -2076,7 +2090,7 @@ class GroundVariantSplitTest(unittest.TestCase):
              "gtin": "20000004"},
         ]}
         source = "Acme Tools\npart AC-4417\nGTIN 2000000000008 20000004\n"
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_write(extraction, source)
         self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
         conflicts = [f for f in findings
                      if f["code"] == "VARIANT_SPLIT" and f["field"] == "gtin"]
@@ -2092,7 +2106,7 @@ class GroundVariantSplitTest(unittest.TestCase):
             {"description": "Hex nut M8 zinc", "part_number": "NW-2202"},
             {"description": "Hex nut M8 brass", "part_number": "NW-2202"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart NW-2202\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart NW-2202\n")
         self.assertEqual(checked["items"][0]["note"],
                          "variant: Hex nut M8 zinc · variant: Hex nut M8 brass")
         self.assertEqual([f["input_index"] for f in findings], [1, 2])
@@ -2112,7 +2126,7 @@ class IndexDivergenceTest(unittest.TestCase):
             {"part_number": "AC-4417"},
             {"part_number": "ZZ-9999", "quantity": 2},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(len(checked["items"]), 2)
         flagged = [f for f in findings if f["code"] == "UNGROUNDED_ID"]
         self.assertEqual(len(flagged), 1)
@@ -2144,7 +2158,7 @@ class GroundLinkContractTest(unittest.TestCase):
                   "quantity: 28 x 5\n"
                   "%s\n" % ALIEXPRESS_LINK)
         snapshot = copy.deepcopy(extraction)
-        checked, _findings = G.ground(extraction, source)
+        checked, _findings = ground_write(extraction, source)
         self.assertEqual(extraction, snapshot)
         self.assertIsNot(checked, extraction)
         self.assertIsNot(checked["items"][0], extraction["items"][0])
@@ -2157,7 +2171,7 @@ class GroundLinkContractTest(unittest.TestCase):
                   "4x https://www.amazon.de/dp/B0TEST1234\n"
                   "quantity: 28 x 5\n"
                   "Hex bolt set, 5-pack, part AC-4417\n")
-        _checked, findings = G.ground(extraction, source)
+        _checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "SET_MULTIPLIED"])
         for finding in findings:
@@ -2183,14 +2197,14 @@ class QuantityFormatTest(unittest.TestCase):
         source = ("Acme Tools - order confirmation\n"
                   "1.000 St\u00fcck\n"
                   "https://www.amazon.de/dp/B0TEST1234\n")
-        checked, _findings = G.ground({"items": []}, source)
+        checked, _findings = ground_write({"items": []}, source)
         self.assertEqual(checked["items"][0]["quantity"], 1000)
 
     def test_comma_group_is_a_thousand(self):
         source = ("Acme Tools - order confirmation\n"
                   "1,000 x\n"
                   "https://www.amazon.de/dp/B0TEST1234\n")
-        checked, _findings = G.ground({"items": []}, source)
+        checked, _findings = ground_write({"items": []}, source)
         self.assertEqual(checked["items"][0]["quantity"], 1000)
 
     def test_three_digits_behind_a_separator_are_a_group(self):
@@ -2215,7 +2229,7 @@ class QuantityFormatTest(unittest.TestCase):
                       "total 12,50"):
             source = ("Acme Tools\n%s\nhttps://www.amazon.de/dp/B0TEST1234\n"
                       % price)
-            checked, _findings = G.ground({"items": []}, source)
+            checked, _findings = ground_write({"items": []}, source)
             self.assertIsNone(checked["items"][0]["quantity"], price)
 
     def test_a_price_value_is_not_a_quantity(self):
@@ -2225,7 +2239,7 @@ class QuantityFormatTest(unittest.TestCase):
         source = ("Acme Tools\n"
                   "4x https://www.amazon.de/dp/B0TEST1234 "
                   "2x https://www.ebay.de/itm/123456789001\n")
-        checked, _findings = G.ground({"items": []}, source)
+        checked, _findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [4, 2])
 
@@ -2233,7 +2247,7 @@ class QuantityFormatTest(unittest.TestCase):
         source = ("Acme Tools\n"
                   "4x https://www.amazon.de/dp/B0TEST1234 "
                   "https://www.ebay.de/itm/123456789001\n")
-        checked, _findings = G.ground({"items": []}, source)
+        checked, _findings = ground_write({"items": []}, source)
         self.assertEqual([item["quantity"] for item in checked["items"]],
                          [4, None])
 
@@ -2246,7 +2260,7 @@ class QuantityFormatTest(unittest.TestCase):
             {"description": "Hex bolt set zinc", "part_number": "AC-4417",
              "quantity": "2 pcs"},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
         self.assertEqual(G._to_number("2 pcs"), 2)
@@ -2267,7 +2281,7 @@ class QuantityFormatTest(unittest.TestCase):
             {"description": "Hex bolt set zinc", "part_number": "AC-4417",
              "quantity": Decimal("2")},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
         self.assertEqual(G._to_number(Decimal("2")), 2)
@@ -2282,7 +2296,7 @@ class QuantityFormatTest(unittest.TestCase):
             {"description": "Hex bolt set zinc", "part_number": "AC-4417",
              "quantity": 10 ** 400},
         ]}
-        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        checked, findings = ground_write(extraction, "Acme Tools\npart AC-4417\n")
         # An out-of-range number is not a quantity, but the field is not empty.
         # A line that states a quantity is a second position, so it survives:
         # VARIANT_SPLIT must never delete a line it cannot read (B2).
@@ -2295,7 +2309,7 @@ class QuantityFormatTest(unittest.TestCase):
         self.assertIsNone(G._to_number(run))
         self.assertIsNone(G._to_number(run + " pcs"))
         source = "Acme Tools\nquantity: %s x 5\n" % run
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_write({"items": []}, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"], [])
 
@@ -2312,7 +2326,7 @@ class GroundInputTypeTest(unittest.TestCase):
     def test_ground_rejects_an_extraction_that_is_not_a_dict(self):
         for bad in ([], (), "items", None, 4, b"{}"):
             with self.assertRaises(TypeError) as caught:
-                G.ground(bad, "")
+                ground_write(bad, "")
             message = str(caught.exception)
             self.assertIn("extraction", message)
             self.assertIn(type(bad).__name__, message)
@@ -2320,7 +2334,7 @@ class GroundInputTypeTest(unittest.TestCase):
     def test_ground_rejects_items_that_is_not_a_list(self):
         for bad in ((), "items", {}, None, 4):
             with self.assertRaises(TypeError) as caught:
-                G.ground({"items": bad}, "")
+                ground_write({"items": bad}, "")
             message = str(caught.exception)
             self.assertIn("items", message)
             self.assertIn(type(bad).__name__, message)
@@ -2328,13 +2342,13 @@ class GroundInputTypeTest(unittest.TestCase):
     def test_ground_rejects_a_source_that_is_not_a_str(self):
         for bad in (b"text", None, 4, ["text"]):
             with self.assertRaises(TypeError) as caught:
-                G.ground({"items": []}, bad)
+                ground_write({"items": []}, bad)
             message = str(caught.exception)
             self.assertIn("source_text", message)
             self.assertIn(type(bad).__name__, message)
 
     def test_ground_still_tolerates_a_missing_items_key(self):
-        checked, findings = G.ground({}, "Acme Tools\n")
+        checked, findings = ground_write({}, "Acme Tools\n")
         self.assertEqual(checked, {"items": []})
         self.assertEqual(findings, [])
 
@@ -2450,6 +2464,159 @@ class PublicGtinTest(unittest.TestCase):
                 text += handle.read()
         for code in self.NOT_A_GTIN:
             self.assertIn(code, text)
+
+
+class SuggestOnlyDefaultTest(unittest.TestCase):
+    """Fix round 3, card 3.1: the three value-writing checks only suggest.
+
+    ground() writes no extraction value for SET_MULTIPLIED, MISSING_GTIN and the
+    quantity of an UNCOVERED_LINK item unless the caller passes apply=True. The
+    finding is then "suggested": its new_value is the value apply=True would
+    write, and nothing was written. A producer can show it to a human and decide.
+
+    Everything those checks do that writes no extraction value still happens in
+    both modes: the item is marked uncertain, the placeholder item is appended,
+    and a GTIN no item can take is still reported.
+
+    The two modes are tested on the same input, because a suggestion that does
+    not name the value the write mode writes is a wrong suggestion.
+    """
+
+    SET_ITEMS = {"items": [{"description": "Hex bolt set, 5-pack",
+                            "part_number": "AC-4417", "quantity": 140,
+                            "unit": "piece"}]}
+    GTIN_ITEMS = {"items": [{"description": "Widget assembly",
+                             "quantity": 4, "unit": "piece"}]}
+    LINK_ITEMS = {"items": []}
+
+    @staticmethod
+    def _without_uncertain(extraction):
+        """Return a deep copy with every "uncertain" flag removed.
+
+        ground() marks an item uncertain in both modes. That flag is the
+        module's own bookkeeping, not an extraction value, so the comparison
+        that proves "nothing was written" ignores it.
+        """
+        flat = copy.deepcopy(extraction)
+        for item in flat["items"]:
+            item.pop("uncertain", None)
+        return flat
+
+    def test_the_default_leaves_a_multiplied_set_as_the_extractor_wrote_it(self):
+        checked, findings = G.ground(self.SET_ITEMS, SET_SOURCE)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        finding = findings[0]
+        self.assertEqual(finding["action"], "suggested")
+        self.assertEqual(finding["field"], "quantity")
+        self.assertEqual(finding["old_value"], 140)
+        self.assertEqual(finding["new_value"], 28)
+        self.assertEqual(finding["item_index"], 0)
+        self.assertEqual(finding["input_index"], 0)
+        # The quantity and the unit are exactly what the caller passed in.
+        self.assertEqual(self._without_uncertain(checked),
+                         self._without_uncertain(self.SET_ITEMS))
+        self.assertEqual(checked["items"][0]["quantity"], 140)
+        self.assertEqual(checked["items"][0]["unit"], "piece")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_apply_true_corrects_the_multiplied_set(self):
+        checked, findings = G.ground(self.SET_ITEMS, SET_SOURCE, apply=True)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "corrected")
+        self.assertEqual(findings[0]["new_value"], 28)
+        self.assertEqual(checked["items"][0]["quantity"], 28)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+
+    def test_the_default_leaves_a_missing_gtin_unattached(self):
+        checked, findings = G.ground(self.GTIN_ITEMS, ONE_GTIN_SOURCE)
+        self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"])
+        finding = findings[0]
+        self.assertEqual(finding["action"], "suggested")
+        self.assertEqual(finding["field"], "gtin")
+        self.assertEqual(finding["new_value"], "2000000000008")
+        self.assertEqual(finding["item_index"], 0)
+        self.assertEqual(finding["input_index"], 0)
+        self.assertNotIn("gtin", checked["items"][0])
+        self.assertEqual(self._without_uncertain(checked),
+                         self._without_uncertain(self.GTIN_ITEMS))
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_apply_true_attaches_the_missing_gtin(self):
+        checked, findings = G.ground(self.GTIN_ITEMS, ONE_GTIN_SOURCE, apply=True)
+        self.assertEqual(findings[0]["action"], "attached")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
+
+    def test_the_default_appends_the_link_without_its_quantity(self):
+        checked, findings = G.ground(self.LINK_ITEMS, LINK_SOURCE)
+        # The item, then the quantity it suggests, then the next link.
+        self.assertEqual([f["code"] for f in findings],
+                         ["UNCOVERED_LINK"] * 4)
+        self.assertEqual([f["action"] for f in findings],
+                         ["added", "suggested", "added", "suggested"])
+        self.assertEqual([f["item_index"] for f in findings], [0, 0, 1, 1])
+        added, suggested = findings[0], findings[1]
+        self.assertEqual(added["field"], "link")
+        self.assertEqual(added["new_value"], AMAZON_LINK)
+        self.assertIsNone(added["input_index"])
+        self.assertEqual(suggested["field"], "quantity")
+        self.assertIsNone(suggested["old_value"])
+        self.assertEqual(suggested["new_value"], 4)
+        self.assertIsNone(suggested["input_index"])
+        # The evidence names the unit word apply=True writes.
+        self.assertIn("piece", suggested["evidence"])
+        item = checked["items"][0]
+        self.assertEqual(item["link"], AMAZON_LINK)
+        self.assertEqual(item["other_ids"], ["ASIN:B0TEST1234"])
+        self.assertNotIn("quantity", item)
+        self.assertNotIn("unit", item)
+        self.assertTrue(item["uncertain"])
+
+    def test_apply_true_appends_the_link_with_its_quantity(self):
+        checked, findings = G.ground(self.LINK_ITEMS, LINK_SOURCE, apply=True)
+        self.assertEqual([f["code"] for f in findings],
+                         ["UNCOVERED_LINK", "UNCOVERED_LINK"])
+        self.assertEqual([f["action"] for f in findings], ["added", "added"])
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [4, 2])
+        self.assertEqual([item["unit"] for item in checked["items"]],
+                         ["piece", "piece"])
+
+    def test_a_reported_gtin_is_the_same_in_both_modes(self):
+        # No item can take this GTIN, so neither mode writes anything and the
+        # finding is "reported" in both. The card leaves it unchanged.
+        extraction = {"items": [{"description": "Garden hose"}]}
+        default, default_findings = G.ground(extraction, ONE_GTIN_SOURCE)
+        applied, applied_findings = G.ground(extraction, ONE_GTIN_SOURCE,
+                                             apply=True)
+        self.assertEqual(default, applied)
+        self.assertEqual(default_findings, applied_findings)
+        self.assertEqual(default_findings[0]["action"], "reported")
+
+    def test_a_second_gtin_on_one_item_is_reported_in_both_modes(self):
+        # One item takes at most one GTIN. In the default mode the first one is
+        # only suggested, and the finding for the second says so: nothing was
+        # attached, so the note may not claim a write.
+        source = ("Northwind Supply\n"
+                  "4 x Hex bolt M8  EAN 2000000000008  EAN 20000004\n")
+        extraction = {"items": [{"description": "Hex bolt M8"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings],
+                         ["suggested", "reported"])
+        self.assertIn("suggestion", findings[1]["evidence"])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_apply_must_be_a_bool(self):
+        for bad in ("yes", 1, None, [], {}):
+            with self.assertRaises(TypeError) as caught:
+                G.ground({"items": []}, "", apply=bad)
+            message = str(caught.exception)
+            self.assertIn("apply", message)
+            self.assertIn(type(bad).__name__, message)
+
+    def test_apply_is_keyword_only(self):
+        # A third positional argument would be read as a flag by accident.
+        with self.assertRaises(TypeError):
+            G.ground({"items": []}, "", True)
 
 
 if __name__ == "__main__":

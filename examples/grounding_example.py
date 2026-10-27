@@ -7,7 +7,11 @@ Run from the repo root:
 
 The extractor output below is well-formed: every field has the right type, the
 quantity is a number and the part number looks like a part number. It is still
-wrong in three ways. ground() finds all three and reports what it did.
+wrong in three ways. ground() finds all three.
+
+It runs twice. The first run is the default: ground() suggests the values it
+would write and writes nothing, so a producer can show the suggestions to a
+human. The second run passes apply=True and writes them.
 
 Every name, part number and GTIN here is invented. The GTIN uses the GS1
 prefix 2, which is reserved for internal use, so no real product carries it.
@@ -39,17 +43,9 @@ EXTRACTION = {
 }
 
 
-def main():
-    checked, findings = g.ground(EXTRACTION, SOURCE)
-
-    print("source text:")
-    for line in SOURCE.splitlines():
-        print("  " + line)
-
-    print("\nextractor output:")
-    print(json.dumps(EXTRACTION, indent=2))
-
-    print("\nfindings: %d" % len(findings))
+def print_findings(findings):
+    """Print one line per finding, plus its evidence."""
+    print("findings: %d" % len(findings))
     for finding in findings:
         print("  %-14s %-10s %-11s %s -> %s" % (
             finding["code"],
@@ -60,10 +56,28 @@ def main():
         ))
         print("  %-14s %s" % ("", finding["evidence"]))
 
+
+def main():
+    print("source text:")
+    for line in SOURCE.splitlines():
+        print("  " + line)
+
+    print("\nextractor output:")
+    print(json.dumps(EXTRACTION, indent=2))
+
+    print("\ndefault mode: ground() suggests, it writes nothing")
+    suggested, suggest_findings = g.ground(EXTRACTION, SOURCE)
+    print_findings(suggest_findings)
+    print("\nchecked output (the extractor's own values):")
+    print(json.dumps(suggested, indent=2))
+
+    print("\nwrite mode: ground(..., apply=True) writes what it suggested")
+    checked, findings = g.ground(EXTRACTION, SOURCE, apply=True)
+    print_findings(findings)
     print("\nchecked output (input left unchanged):")
     print(json.dumps(checked, indent=2))
 
-    if not findings:
+    if not suggest_findings or not findings:
         print("\nno findings: this example is broken", file=sys.stderr)
         return 1
     return 0
