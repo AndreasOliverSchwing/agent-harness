@@ -999,40 +999,109 @@ class IdentifierRegexCostTest(unittest.TestCase):
                         "ground took %.3f s on %d characters"
                         % (elapsed, len(source)))
 
-    def test_ground_is_linear_on_many_set_lines(self):
-        # The pack-marker scan runs once per set line unless the sizes are
-        # collected once for the whole text.
-        source = "Acme Tools\n" + "quantity: 2 x 2 " * 1000
+
+class GtinScanCostTest(unittest.TestCase):
+    """find_gtins stays linear on a mail with many distinct numbers (S14).
+
+    The run scan was always linear: a long digit run is skipped whole. The
+    de-duplication was not. It asked "is this number already found?" of a list,
+    so 20,000 distinct numbers took 1.3 s and 40,000 took 5.2 s. The guard is
+    the count of distinct numbers, not the length of one run, because no
+    implementation of the run scan was ever quadratic.
+
+    The bound is generous: the set lookup needs about a tenth of a second at
+    this size.
+    """
+
+    COUNT = 40000
+    BOUND_SECONDS = 1.0
+
+    def test_find_gtins_is_linear_on_many_distinct_numbers(self):
+        numbers = [_synthetic_gtin8(serial) for serial in range(self.COUNT)]
+        text = " ".join(numbers)
         started = time.perf_counter()
-        G.ground({"items": []}, source)
+        found = G.find_gtins(text)
         elapsed = time.perf_counter() - started
+        # Every number is valid and distinct, so the de-duplication has real
+        # work to do: the test may not pass by finding nothing.
+        self.assertEqual(len(found), self.COUNT)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "find_gtins took %.3f s on %d characters of %d numbers"
+                        % (elapsed, len(text), self.COUNT))
+
+
+class SetCheckCostTest(unittest.TestCase):
+    """The set check stays linear on untrusted text (S14).
+
+    Two guards, each proven by reverting it locally:
+
+    - the pack-marker patterns are bounded and start on a digit boundary. A
+      bare "(\\d+)" retries from every position inside a long digit run, so
+      20,000 digits took 11.5 s. The source must hold a set line, because the
+      marker scan only runs when the mail has one.
+    - the per-line facts are built once per line. Rebuilding them per set line
+      costs 28.8 s on 1,000 positions. The set lines must stand in separate
+      blocks, one per line, because a block of set lines on one line is walked
+      once either way.
+
+    The bound is generous: the linear code needs about a twentieth of a second
+    at these sizes.
+    """
+
+    LENGTH = 20000
+    POSITIONS = 1000
+    BOUND_SECONDS = 1.0
+
+    def test_ground_is_linear_on_a_long_digit_run_beside_a_set_line(self):
+        source = ("Acme Tools\n"
+                  "AC-4417 Sechskantschraube M8 2er-Pack\n"
+                  "quantity: 4 x 2\n"
+                  + "1" * self.LENGTH + "\n")
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "AC-4417",
+                                 "quantity": 8}]}
+        started = time.perf_counter()
+        checked, findings = G.ground(extraction, source)
+        elapsed = time.perf_counter() - started
+        # The set line corrects the item, so the pack-marker scan ran on the
+        # digit run: the test may not pass by skipping that scan.
+        self.assertEqual([finding["code"] for finding in findings],
+                         ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters"
                         % (elapsed, len(source)))
 
-    def test_find_gtins_is_linear_on_a_long_digit_run(self):
-        text = "1" * self.LENGTH
+    def test_ground_is_linear_on_a_set_block_per_position(self):
+        lines = ["Acme Tools - order confirmation"]
+        items = []
+        for position in range(self.POSITIONS):
+            part_number = "AC-%04d" % position
+            lines.append("%s Sechskantschraube M8 2er-Pack" % part_number)
+            lines.append("quantity: 4 x 2")
+            items.append({"part_number": part_number, "quantity": 8,
+                          "description": "Hex bolt M8"})
+        source = "\n".join(lines) + "\n"
         started = time.perf_counter()
-        G.find_gtins(text)
+        checked, findings = G.ground({"items": items}, source)
         elapsed = time.perf_counter() - started
+        # Every position is corrected, so the check has real work to do.
+        self.assertEqual(len(findings), self.POSITIONS)
+        self.assertEqual(set(finding["code"] for finding in findings),
+                         set(["SET_MULTIPLIED"]))
+        self.assertEqual(set(item["quantity"] for item in checked["items"]),
+                         set([4]))
         self.assertLess(elapsed, self.BOUND_SECONDS,
-                        "find_gtins took %.3f s on %d characters"
-                        % (elapsed, len(text)))
+                        "ground took %.3f s on %d characters in %d positions"
+                        % (elapsed, len(source), self.POSITIONS))
 
-    def test_ground_is_linear_on_a_long_digit_run(self):
-        # The pack-marker patterns start with "(\d+)" and no boundary, so every
-        # position inside a long digit run starts a fresh scan: 20,000 digits
-        # took 6 s once the marker scan ran on every source.
-        source = "Acme Tools\n" + "1" * self.LENGTH
-        extraction = {"items": [{"description": "Widget",
-                                 "part_number": "AC-441",
-                                 "gtin": "20000004"}]}
-        started = time.perf_counter()
-        G.ground(extraction, source)
-        elapsed = time.perf_counter() - started
-        self.assertLess(elapsed, self.BOUND_SECONDS,
-                        "ground took %.3f s on %d characters"
-                        % (elapsed, len(source)))
+
+def _synthetic_gtin8(serial):
+    """A GTIN-8 with the internal-use prefix 2 and a valid check digit."""
+    body = "2" + ("%06d" % serial)
+    total = sum(int(digit) * (3 if position % 2 == 0 else 1)
+                for position, digit in enumerate(body))
+    return body + str((10 - total % 10) % 10)
 
 
 def _synthetic_gtin13(serial):

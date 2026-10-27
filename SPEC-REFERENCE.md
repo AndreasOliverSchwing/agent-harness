@@ -372,6 +372,15 @@ An item is corrected at most once, and the pack size always comes from the
 source text. The forms `5 pack`, `5-pack`, `5er-Pack` and `5er Pack` all name
 the pack size 5.
 
+The set check costs the length of the mail, not the square of it. The pack
+markers are read once per line, not once per set line, and each pack-marker
+pattern starts on a digit boundary and reads at most four digits, so a long
+digit run is not retried at every position. The per-line facts (id form, token
+boundaries, pack sizes, words, links, GTIN-14s) are built once for the whole
+mail, so a mail with 1,000 positions costs 1,000 lines of work. Two timing tests
+hold these bounds: one mail has a set line beside a 20,000-digit run, the other
+has one set block per line for 1,000 positions.
+
 ### A merge reports every field it writes
 
 `VARIANT_SPLIT` folds a repeated part number into the item it repeats. The

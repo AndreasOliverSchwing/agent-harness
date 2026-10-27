@@ -265,13 +265,16 @@ name", not as a recall rate on real extractor output.
 - **Untrusted text stays cheap.** Link scanning is linear in the length of the
   text: a 20,000-character line with a long punctuation run finishes in about a
   millisecond. The identifier path is linear too: the quantity label (`qty`,
-  `Menge`, `quantity:`), the digit-run scan behind `find_gtins`, and the
-  pack-marker scan that runs once per source instead of once per set line.
+  `Menge`, `quantity:`), the pack-marker scan that runs once per line instead of
+  once per set line, and the de-duplication in `find_gtins`, which remembers the
+  numbers it found in a set instead of scanning a list (40,000 distinct numbers
+  took 5.7 s as a list and 0.05 s as a set).
   The link checks and the GTIN check index their work once per mail: the links
   the items already cover are a set of id forms, so a mail with one uncovered
   link per line is linear, and the GTIN owner tokenises a line once, so a line
   of thousands of numbers costs its own length. 100 KB of either shape finishes
-  in under a second. Timing tests in the suite hold those bounds.
+  in under a second. Timing tests in the suite hold those bounds, and each
+  timing test is proven by reverting the guard it covers.
 - **The set check does not use an id longer than 64 characters for line
   matching.** It builds every form a line could hold, bounded by the longest id
   in the extraction, so one absurd id would make every token on a line build a

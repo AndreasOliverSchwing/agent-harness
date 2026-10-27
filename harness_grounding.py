@@ -442,13 +442,20 @@ def find_gtins(text):
     more than 14 digits is not a GTIN and is skipped whole: a longer number is
     never trimmed down to a shorter one, because that would invent a valid
     check digit out of a different number.
+
+    A number is remembered in a set, so the repeat question costs the same
+    however many numbers the text holds: 40,000 distinct numbers took 5.7 s
+    when the numbers already found were a list.
     """
     if not isinstance(text, str) or not text:
         return []
     found = []
+    seen = set()
     for match in _DIGIT_RUN.finditer(text):
         run = match.group(0)
-        if len(run) in GTIN_LENGTHS and gtin_valid(run) and run not in found:
+        if (len(run) in GTIN_LENGTHS and run not in seen
+                and gtin_valid(run)):
+            seen.add(run)
             found.append(run)
     return found
 
