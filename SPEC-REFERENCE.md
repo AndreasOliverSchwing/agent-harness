@@ -427,7 +427,9 @@ Two conditions must hold, and both must hold on one line:
    position above.
    A line grounds an item when the part number occurs on it on a token
    boundary, when its GTIN is on it, when the item's link is on it, or when it
-   shares at least `MATCH_RATIO` of the item's description words.
+   shares at least `MATCH_RATIO` of the item's description words. A line that
+   grounds an item by its id, GTIN or link grounds no other item by description
+   words.
    The description rule is a fallback only. When the item's own id occurs
    anywhere in the source, only a line that carries that id grounds it. So
    `"NW-22010 Kabelbinder 2er-Pack"` never grounds `AC-44170 Schraube M8

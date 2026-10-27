@@ -2513,6 +2513,32 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertNotIn("uncertain", checked["items"][0])
         self.assertEqual(checked["items"][1]["quantity"], "4 x 2")
 
+    def test_a_line_that_names_an_item_by_id_does_not_ground_another_by_description(self):
+        # S3' from the 2026-10-27 second review. Line 1 names NW-22010 by its
+        # part number and the second item shares one description word
+        # ("Kabelbinder") with it, which is enough for a two-word description.
+        # The set line on that line belongs to NW-22010, so the 8 pieces of
+        # "Kabelbinder schwarz" stay 8.
+        extraction = {"items": [
+            {"part_number": "NW-22010", "description": "Kabelbinder 200 mm",
+             "quantity": 4, "unit": "set"},
+            {"description": "Kabelbinder schwarz", "quantity": 8,
+             "unit": "piece"},
+        ]}
+        source = ("Pos. 1: NW-22010 Kabelbinder 200 mm, 2er-Pack, "
+                  "Menge: 4 x 2\n"
+                  "Pos. 2: Kabelbinder schwarz, 2er-Pack, 8 St\u00fcck")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+        self.assertNotIn("uncertain", checked["items"][1])
+        checked, findings = ground_write(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+        self.assertEqual(checked["items"][1]["unit"], "piece")
+
     def test_the_evidence_names_the_unit_change(self):
         # S1: the finding says what the unit becomes, not only the number.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}

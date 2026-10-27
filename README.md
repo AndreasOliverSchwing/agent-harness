@@ -434,8 +434,10 @@ name", not as a recall rate on real extractor output.
   A line grounds an item by its part number, GTIN or link, or by the item's
   description words. The description is a fallback only: when the item's part
   number occurs anywhere in the source, only a line that carries that id
-  grounds it. The pack words (`pack`, `packs`, `packung`, `packungen`, `set`,
-  `sets`, `satz`) are generic and never count as a description match.
+  grounds it. A line that grounds an item by its id, GTIN or link grounds no
+  other item by description words. The pack words (`pack`, `packs`, `packung`,
+  `packungen`, `set`, `sets`, `satz`) are generic and never count as a
+  description match.
 - The checks are mechanical pattern matches. They are deterministic on purpose: a
   grounding check that needs a model fails exactly when the extraction is least
   trustworthy.

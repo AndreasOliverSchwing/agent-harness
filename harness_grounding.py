@@ -2454,6 +2454,12 @@ def _grounded_by_line(items, facts):
     One word of "Kabelbinder 2er-Pack" reaching MATCH_RATIO for "Schraube M8
     2er-Pack" was enough to rewrite the screws' quantity.
 
+    A line that grounds an item by its id, GTIN or link grounds no other item
+    by description words either. The line names one product, so it is that
+    product's line: one shared word of a two-word description handed another
+    product's set line to an item that has no id in the source, and rewrote a
+    correct quantity.
+
     The lookup is inverted on purpose. A supplier line names one product, so a
     line grounds a few items at most, while a mail holds many. The set check
     then walks the few items a line grounds instead of every item in the mail
@@ -2521,6 +2527,12 @@ def _grounded_by_line(items, facts):
     grounded = []
     for fact, found in zip(facts, id_found):
         found = set(found)
+        if found:
+            # The line names an item by its part number, GTIN or link. It is
+            # that item's line, so a shared description word must not hand the
+            # line to another item as well.
+            grounded.append(sorted(found))
+            continue
         line_words = fact["words"]
         for word in line_words:
             for index in words_any.get(word, ()):

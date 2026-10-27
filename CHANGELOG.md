@@ -286,6 +286,15 @@ below is one card of that round.
   cannot read is now that item's line, and no other item takes it. Tested in
   both modes. Documented in `SPEC-REFERENCE.md`, `README.md` and the
   `_check_set_multiplied()` and `_set_owner_lines()` docstrings.
+- **A line that names an item by its id grounds no other item by description
+  words (S3′).** A description of two words or fewer matched on one shared
+  word, so the line `Pos. 1: NW-22010 Kabelbinder 200 mm, 2er-Pack, Menge:
+  4 x 2` also grounded the item "Kabelbinder schwarz", which has no id in the
+  source, and its correct 8 became 4 sets. A line that grounds an item by its
+  part number, GTIN or link now grounds no other item by description words: the
+  line names one product, so it is that product's line. Tested in both modes.
+  Documented in `SPEC-REFERENCE.md`, `README.md` and the `_grounded_by_line()`
+  docstring.
 
 ### Fixed in the second review round
 
