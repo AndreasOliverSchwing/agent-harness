@@ -193,18 +193,18 @@ rather than a GTIN on the wrong item.
 ### A GTIN is one number space
 
 GS1 has one number space, not four. A GTIN-8, -12 and -13 are the GTIN-14 with
-leading zeros, so `036000291452`, `0036000291452` and `00036000291452` are the
+leading zeros, so `200000000011` and its padded form `00200000000011` are the
 same GTIN. `gtin14(code)` returns that form, or `None` when the check digit is
 wrong.
 
 Both GTIN checks compare the padded form:
 
 - `UNGROUNDED_ID` grounds a `gtin` value when the source holds the same number
-  under another spelling. The extractor may write `0036000291452` where the
-  source has `036000291452`.
+  under another spelling. The extractor may write `00200000000011` where the
+  source has `200000000011`.
 - `MISSING_GTIN` does not attach a number that an item already carries. The
   item's `gtin`, `part_number` and `other_ids` all count, and a label in front of
-  the number is ignored: `EAN:0036000291452` carries the GTIN.
+  the number is ignored: `EAN:00200000000011` carries the GTIN.
 
 ### Which item a GTIN belongs to
 

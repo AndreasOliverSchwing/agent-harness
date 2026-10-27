@@ -3,7 +3,7 @@
     "id": "gtin-01",
     "error_type": "omit_gtin",
     "expect_item": 0,
-    "source_text": "Acme Tools - order request\nCordless drill driver 18 V, part AC-4417, GTIN 4000000000006\nquantity: 4\n",
+    "source_text": "Acme Tools - order request\nCordless drill driver 18 V, part AC-4417, GTIN 2000000000008\nquantity: 4\n",
     "gold": {
       "items": [
         {
@@ -11,7 +11,7 @@
           "unit": "piece",
           "description": "Cordless drill driver 18 V",
           "part_number": "AC-4417",
-          "gtin": "4000000000006"
+          "gtin": "2000000000008"
         }
       ]
     },
@@ -30,7 +30,7 @@
     "id": "gtin-02",
     "error_type": "omit_gtin",
     "expect_item": 1,
-    "source_text": "Northwind Supply - order request\n1. Hex bolt M8 zinc plated, part NW-1104, quantity 40\n2. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 4000000000013\n",
+    "source_text": "Northwind Supply - order request\n1. Hex bolt M8 zinc plated, part NW-1104, quantity 40\n2. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 2000000000015\n",
     "gold": {
       "items": [
         {
@@ -44,7 +44,7 @@
           "unit": "piece",
           "description": "Washer 12 mm stainless",
           "part_number": "NW-2201",
-          "gtin": "4000000000013"
+          "gtin": "2000000000015"
         }
       ]
     },
@@ -69,7 +69,7 @@
     "id": "gtin-03",
     "error_type": "omit_gtin",
     "expect_item": 0,
-    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781\nGTIN 4000000000020\nquantity: 6\n",
+    "source_text": "Blue Harbor Electrical - order request\n1 x Junction box IP65, part BH-7781\nGTIN 2000000000022\nquantity: 6\n",
     "gold": {
       "items": [
         {
@@ -77,7 +77,7 @@
           "unit": "piece",
           "description": "Junction box IP65",
           "part_number": "BH-7781",
-          "gtin": "4000000000020"
+          "gtin": "2000000000022"
         }
       ]
     },
@@ -96,7 +96,7 @@
     "id": "gtin-04",
     "error_type": "omit_gtin",
     "expect_item": 0,
-    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 4000000000037\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n",
+    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 2000000000039\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n",
     "gold": {
       "items": [
         {
@@ -104,7 +104,7 @@
           "unit": "piece",
           "description": "Angle grinder 125 mm",
           "part_number": "AC-5520",
-          "gtin": "4000000000037"
+          "gtin": "2000000000039"
         },
         {
           "quantity": 25,
@@ -135,7 +135,7 @@
     "id": "gtin-05",
     "error_type": "omit_gtin",
     "expect_item": 1,
-    "source_text": "Northwind Supply - order request\n1. Safety gloves size 10, part NW-3301, quantity 20\n2. Safety goggles clear, part NW-3302, quantity 15, GTIN 4000000000044\n3. Ear defenders, part NW-3303, quantity 12\n",
+    "source_text": "Northwind Supply - order request\n1. Safety gloves size 10, part NW-3301, quantity 20\n2. Safety goggles clear, part NW-3302, quantity 15, GTIN 2000000000046\n3. Ear defenders, part NW-3303, quantity 12\n",
     "gold": {
       "items": [
         {
@@ -149,7 +149,7 @@
           "unit": "piece",
           "description": "Safety goggles clear",
           "part_number": "NW-3302",
-          "gtin": "4000000000044"
+          "gtin": "2000000000046"
         },
         {
           "quantity": 12,
@@ -186,7 +186,7 @@
     "id": "gtin-06",
     "error_type": "omit_gtin",
     "expect_item": 0,
-    "source_text": "Blue Harbor Electrical - order request\nCable tie 200 mm black, part BH-9902, GTIN 40123455\nquantity: 500\n",
+    "source_text": "Blue Harbor Electrical - order request\nCable tie 200 mm black, part BH-9902, GTIN 20000035\nquantity: 500\n",
     "gold": {
       "items": [
         {
@@ -194,7 +194,7 @@
           "unit": "piece",
           "description": "Cable tie 200 mm black",
           "part_number": "BH-9902",
-          "gtin": "40123455"
+          "gtin": "20000035"
         }
       ]
     },
@@ -850,7 +850,7 @@
   {
     "id": "clean-02",
     "error_type": "clean",
-    "source_text": "Northwind Supply - order request\n1. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 4000000000051\n",
+    "source_text": "Northwind Supply - order request\n1. Washer 12 mm stainless, part NW-2201, quantity 100, GTIN 2000000000053\n",
     "gold": {
       "items": [
         {
@@ -858,7 +858,7 @@
           "unit": "piece",
           "description": "Washer 12 mm stainless",
           "part_number": "NW-2201",
-          "gtin": "4000000000051"
+          "gtin": "2000000000053"
         }
       ]
     },
@@ -869,7 +869,7 @@
           "unit": "piece",
           "description": "Washer 12 mm stainless",
           "part_number": "NW-2201",
-          "gtin": "4000000000051"
+          "gtin": "2000000000053"
         }
       ]
     }
@@ -904,7 +904,7 @@
   {
     "id": "clean-04",
     "error_type": "clean",
-    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 4000000000068\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n   https://www.ebay.de/itm/223344556680\n",
+    "source_text": "Acme Tools - order request\n1. Angle grinder 125 mm, part AC-5520, quantity 2, GTIN 2000000000060\n2. Cutting disc 125 mm, part AC-5521, quantity 25\n   https://www.ebay.de/itm/223344556680\n",
     "gold": {
       "items": [
         {
@@ -912,7 +912,7 @@
           "unit": "piece",
           "description": "Angle grinder 125 mm",
           "part_number": "AC-5520",
-          "gtin": "4000000000068"
+          "gtin": "2000000000060"
         },
         {
           "quantity": 25,
@@ -930,7 +930,7 @@
           "unit": "piece",
           "description": "Angle grinder 125 mm",
           "part_number": "AC-5520",
-          "gtin": "4000000000068"
+          "gtin": "2000000000060"
         },
         {
           "quantity": 25,

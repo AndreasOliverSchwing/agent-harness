@@ -46,11 +46,11 @@ BROKEN = {
     "error_type": "omit_gtin",
     "expect_item": 0,
     "source_text": "Acme Tools - order request\n"
-                   "Hex bolt M8 zinc plated, part AC-4417, GTIN 4000000000006\n"
+                   "Hex bolt M8 zinc plated, part AC-4417, GTIN 2000000000008\n"
                    "quantity: 40\n",
     "gold": {"items": [{"quantity": 40, "unit": "piece",
                         "description": "Hex bolt M8 zinc plated",
-                        "part_number": "AC-4417", "gtin": "4000000000006"}]},
+                        "part_number": "AC-4417", "gtin": "2000000000008"}]},
     "extractor_output": {"items": [{"quantity": 40, "unit": "piece",
                                     "description": "Hex bolt M8 zinc plated",
                                     "part_number": "AC-4417"}]},
@@ -76,7 +76,7 @@ class StripIgnoredTest(unittest.TestCase):
         self.assertEqual(extraction, before)
 
     def test_keeps_every_other_field(self):
-        extraction = {"items": [{"gtin": "4000000000006", "part_number": "AC-4417",
+        extraction = {"items": [{"gtin": "2000000000008", "part_number": "AC-4417",
                                  "link": "https://www.amazon.de/dp/B0ACM10001"}]}
         self.assertEqual(R.strip_ignored(extraction), extraction)
 
@@ -113,7 +113,7 @@ class ScoreCaseTest(unittest.TestCase):
         # the case names item 0, so a finding on item 1 is no catch.
         findings = [{"code": "MISSING_GTIN", "action": "attached",
                      "field": "gtin", "old_value": None,
-                     "new_value": "4000000000006", "item_index": 1,
+                     "new_value": "2000000000008", "item_index": 1,
                      "input_index": 1, "evidence": "test"}]
         self.assertFalse(R.is_caught(BROKEN, findings))
 
@@ -131,10 +131,10 @@ class ScoreCaseTest(unittest.TestCase):
         wrong = copy.deepcopy(BROKEN["extractor_output"])
         wrong["items"][0]["uncertain"] = True
         wrong["items"][0]["note"] = "checked"
-        wrong["items"][0]["gtin"] = "4000000000006"
+        wrong["items"][0]["gtin"] = "2000000000008"
         self.assertTrue(R.is_corrected(BROKEN, wrong))
 
-        wrong["items"][0]["gtin"] = "4000000000013"
+        wrong["items"][0]["gtin"] = "2000000000015"
         self.assertFalse(R.is_corrected(BROKEN, wrong))
 
 

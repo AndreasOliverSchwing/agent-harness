@@ -45,8 +45,8 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   and the pack-marker scan runs once per source instead of once per set line
   (1,000 set lines took 1.2 s). Timing tests guard every bound.
 - GTINs are compared as one number space. GTIN-8, -12, -13 and -14 are padded to
-  the GTIN-14 form, so the source's `036000291452` grounds an extraction's
-  `0036000291452` (no `UNGROUNDED_ID`) and the number is not attached a second
+  the GTIN-14 form, so the source's `200000000011` grounds an extraction's
+  `00200000000011` (no `UNGROUNDED_ID`) and the number is not attached a second
   time (no duplicate `MISSING_GTIN`). A GTIN an item already carries in
   `part_number` or in `other_ids` with an `EAN:` label is never attached again.
   New public helper: `gtin14(code)`.

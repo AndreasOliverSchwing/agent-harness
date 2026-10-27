@@ -21,6 +21,7 @@ The tests are split by contract, not by function name:
 """
 import copy
 import os
+import re
 import sys
 import time
 import unittest
@@ -118,13 +119,13 @@ class GtinCheckDigitTest(unittest.TestCase):
         self.assertTrue(G.gtin_valid("200000000004"))
 
     def test_gtin12_invalid_check_digit(self):
-        self.assertFalse(G.gtin_valid("036000291453"))
+        self.assertFalse(G.gtin_valid("200000000012"))
 
     def test_gtin14_valid(self):
-        self.assertTrue(G.gtin_valid("10012345678902"))
+        self.assertTrue(G.gtin_valid("20000000000004"))
 
     def test_gtin14_invalid_check_digit(self):
-        self.assertFalse(G.gtin_valid("10012345678903"))
+        self.assertFalse(G.gtin_valid("20000000000005"))
 
     def test_gtin_rejects_wrong_lengths(self):
         # Wrong lengths, built from short literals on purpose: a bare 9- or
@@ -174,10 +175,10 @@ class FindGtinsTest(unittest.TestCase):
         self.assertEqual(G.find_gtins(None), [])
 
     def test_find_gtins_multiple_lengths(self):
-        text = "20000004 200000000004 2000000000008 10012345678902"
+        text = "20000004 200000000004 2000000000008 20000000000004"
         self.assertEqual(G.find_gtins(text),
                          ["20000004", "200000000004", "2000000000008",
-                          "10012345678902"])
+                          "20000000000004"])
 
 
 class NormalizeIdTest(unittest.TestCase):
@@ -550,26 +551,26 @@ class GtinKeywordRuleTest(unittest.TestCase):
     def test_ground_does_not_attach_a_digit_run_inside_a_link(self):
         # The line carries the keyword; the only digit run on it is in the URL.
         source = ("Acme Tools\n4 x Widget assembly, EAN as printed in the "
-                  "shop: https://shop.example.com/p/4012345678901\n")
+                  "shop: https://shop.example.com/p/2000000000046\n")
         extraction = {"items": [{"description": "Widget assembly"}]}
         checked, findings = G.ground(extraction, source)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
 
     def test_ground_attaches_a_gtin_with_an_english_keyword(self):
-        source = "Acme Tools\n4 x Widget assembly  EAN 4012345678901\n"
+        source = "Acme Tools\n4 x Widget assembly  EAN 2000000000046\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
         checked, findings = G.ground(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
-        self.assertEqual(findings[0]["new_value"], "4012345678901")
-        self.assertEqual(checked["items"][0]["gtin"], "4012345678901")
+        self.assertEqual(findings[0]["new_value"], "2000000000046")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000046")
 
     def test_ground_attaches_a_gtin_with_a_german_keyword(self):
-        source = "Acme Tools\n4 x Widget assembly  Strichcode 4012345678901\n"
+        source = "Acme Tools\n4 x Widget assembly  Strichcode 2000000000046\n"
         extraction = {"items": [{"description": "Widget assembly"}]}
         checked, findings = G.ground(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
-        self.assertEqual(checked["items"][0]["gtin"], "4012345678901")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000046")
 
     def test_ground_takes_only_the_digit_run_after_the_keyword(self):
         # S5 (a) from the 2026-10-27 recheck. The order number comes first on
@@ -2336,6 +2337,81 @@ class GroundInputTypeTest(unittest.TestCase):
         checked, findings = G.ground({}, "Acme Tools\n")
         self.assertEqual(checked, {"items": []})
         self.assertEqual(findings, [])
+
+
+class PublicGtinTest(unittest.TestCase):
+    """Every GTIN a published file shows is an invented prefix-2 number.
+
+    The repo goes public. A GTIN on a real GS1 prefix names a real product, so
+    an example would point at a real catalogue entry. The GS1 prefix 2 is
+    reserved for internal use, so no real product carries these numbers.
+
+    Three numbers stay: they are the examples that prove a valid check digit is
+    not enough to make a GTIN. "12345670" is a telephone number, "20261023" is
+    an order number, and "123456789012" is an eBay item id.
+
+    A GTIN-14 form of a prefix-2 number starts with zeros (00200000000011), so
+    the test strips the padding before it reads the prefix.
+    """
+
+    NOT_A_GTIN = frozenset({"12345670", "20261023", "123456789012"})
+
+    # The files a reader can open. A GTIN in one of them is a public example.
+    FILES = (
+        "harness_grounding.py",
+        "README.md",
+        "SPEC-REFERENCE.md",
+        "CHANGELOG.md",
+        "OVERVIEW.md",
+        "bench/grounding/cases.json",
+        "examples/grounding_example.py",
+        "tests/test_grounding.py",
+        "tests/test_grounding_bench.py",
+        "tests/test_harness_lint.py",
+    )
+
+    # A digit run a reader could take for a GTIN, and a URL, because a digit run
+    # inside a link is a marketplace id, not a GTIN.
+    RUN = re.compile(r"(?<!\d)\d{8,14}(?!\d)")
+    URL = re.compile(r"https?://\S+")
+
+    def _gtins(self, path):
+        """Yield (line number, digit run) for every GTIN-shaped run in path."""
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        urls = [(match.start(), match.end())
+                for match in self.URL.finditer(text)]
+        for match in self.RUN.finditer(text):
+            if any(start <= match.start() and match.end() <= end
+                   for start, end in urls):
+                continue
+            code = match.group(0)
+            if len(code) not in G.GTIN_LENGTHS or not G.gtin_valid(code):
+                continue
+            yield text[:match.start()].count("\n") + 1, code
+
+    def test_every_gtin_in_a_published_file_uses_the_reserved_prefix(self):
+        offenders = []
+        for name in self.FILES:
+            path = os.path.join(REPO, name)
+            for line, code in self._gtins(path):
+                if code in self.NOT_A_GTIN:
+                    continue
+                if not code.lstrip("0").startswith("2"):
+                    offenders.append("%s:%d %s" % (name, line, code))
+        self.assertEqual(offenders, [], "GTINs off the reserved prefix 2:\n  "
+                         + "\n  ".join(offenders))
+
+    def test_the_three_numbers_that_are_not_gtins_are_still_used(self):
+        # The allowlist above is not a dumping ground: each entry must still
+        # appear in a file, so a stale exemption fails here instead of hiding a
+        # real GTIN later.
+        text = ""
+        for name in self.FILES:
+            with open(os.path.join(REPO, name), encoding="utf-8") as handle:
+                text += handle.read()
+        for code in self.NOT_A_GTIN:
+            self.assertIn(code, text)
 
 
 if __name__ == "__main__":

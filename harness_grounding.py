@@ -20,7 +20,7 @@ extraction = {
             "unit": "piece",            # str, optional
             "description": "Hex bolt M8",   # str, optional
             "part_number": "AC-4417",   # str, optional
-            "gtin": "4006381333931",    # str, optional
+            "gtin": "2000000000039",    # str, optional
             "other_ids": ["EBAY:1"],    # list of str, optional
             "link": "https://...",      # str, optional
             "uncertain": False,         # bool, optional; set True by this module
@@ -224,7 +224,7 @@ _ID_JOINER_SET = frozenset(_ID_JOINERS)
 _SEPARATORS = re.compile("[" + re.escape(_ID_JOINERS) + r"\s]+")
 
 # A standalone digit run: no digit directly before or after it. The negative
-# lookarounds are what stop "940063813339311" (15 digits) from matching as a
+# lookarounds are what stop "920000000000391" (15 digits) from matching as a
 # 14-digit GTIN plus a stray digit.
 _DIGIT_RUN = re.compile(r"(?<!\d)\d{8,14}(?!\d)")
 
@@ -309,10 +309,9 @@ _GTIN_KEYWORD = re.compile(
 # Only that run is the GTIN. A line may hold other numbers before or after it,
 # and an order number or a telephone number on the same line is not a GTIN.
 #
-# The suffix must end at a separator, otherwise a GTIN that starts with "13"
-# would lose its first two digits to the suffix: "EAN 1320000000015" reads the
-# whole run, because "1320000000015" does not end after "13". The run itself
-# must not sit inside a longer digit run.
+# The suffix must end at a separator, so it never takes digits from the run:
+# "EAN13 2000000000015" reads the whole run. The run itself must not sit
+# inside a longer digit run.
 #
 # The colon sits inside one optional group, so a run of spaces has one owner:
 # "\s*:?\s*" splits the run between two quantifiers and every split is tried,
@@ -440,9 +439,9 @@ def gtin_valid(code):
     the right, weight them 3, 1, 3, 1, ..., sum, and the check digit is
     whatever makes the sum a multiple of 10.
 
-        gtin_valid("4006381333931")  # True
-        gtin_valid("4006381333932")  # False, last digit changed
-        gtin_valid("96385074")       # True, GTIN-8
+        gtin_valid("2000000000039")  # True
+        gtin_valid("2000000000038")  # False, last digit changed
+        gtin_valid("20000011")       # True, GTIN-8
 
     Non-strings and wrong lengths return False. Surrounding whitespace is
     ignored, because a value copied out of a table often carries a space.
@@ -487,12 +486,12 @@ def gtin14(code):
     """Return code as a GTIN-14, or None when it is not a valid GTIN.
 
     GS1 has one number space, not four: a GTIN-8, -12 and -13 are the GTIN-14
-    with leading zeros. Comparing the padded form is what makes "036000291452"
-    and "0036000291452" the same GTIN.
+    with leading zeros. Comparing the padded form is what makes "200000000011"
+    and "00200000000011" the same GTIN.
 
-        gtin14("036000291452")   # "00036000291452"
-        gtin14("0036000291452")  # "00036000291452"
-        gtin14("4006381333932")  # None, bad check digit
+        gtin14("200000000011")   # "00200000000011"
+        gtin14("20000011")       # "00000020000011"
+        gtin14("2000000000038")  # None, bad check digit
     """
     if not gtin_valid(code):
         return None
@@ -508,8 +507,8 @@ _GTIN_LABEL = re.compile(
 def _gtin14_of_value(value):
     """Return the GTIN-14 form of an id value, with or without a label.
 
-    An extractor writes the same GTIN as "036000291452", "EAN:036000291452" or
-    "0036000291452". All three are the same number; None means the value is not
+    An extractor writes the same GTIN as "200000000011", "EAN:200000000011" or
+    "00200000000011". All three are the same number; None means the value is not
     a valid GTIN at all.
     """
     if not isinstance(value, str):
@@ -1561,7 +1560,7 @@ def _carried_gtins(items):
     """Return the GTIN-14 forms that some item already claims.
 
     A GTIN counts as carried wherever an extractor put it: in gtin, in
-    part_number, or in other_ids with a label ("EAN:0036000291452"). The
+    part_number, or in other_ids with a label ("EAN:00200000000011"). The
     comparison is on the GTIN-14 form, so the same number with or without its
     leading zeros is not attached a second time under the other spelling.
     """
