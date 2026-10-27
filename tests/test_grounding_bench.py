@@ -29,6 +29,10 @@ sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
 
 RUN_PATH = os.path.join(REPO, "bench", "grounding", "run.py")
+
+# A digit run a case could mean as a GTIN: the four GTIN lengths, not glued to
+# another digit.
+GTIN_RUN = re.compile(r"(?<!\d)(?:\d{8}|\d{12,14})(?!\d)")
 _spec = importlib.util.spec_from_file_location("grounding_bench_run", RUN_PATH)
 if _spec is None or _spec.loader is None:  # pragma: no cover - file is in repo
     raise ImportError("cannot load %s" % RUN_PATH)
@@ -404,10 +408,35 @@ class CasePrivacyTest(unittest.TestCase):
             for url in G.find_links(case["source_text"]):
                 self.assertIn(url, declared, "%s: %s" % (case["id"], url))
 
-    def test_every_gtin_in_a_case_is_valid_by_construction(self):
+    def test_every_gtin_shaped_number_outside_a_link_is_a_valid_gtin(self):
+        # find_gtins() returns only valid GTINs, so asserting over its output
+        # could never fail. Walk the raw source text instead: every 8-, 12-,
+        # 13- or 14-digit run outside a link is a number the case means as a
+        # GTIN, so a typo in a check digit fails here. A digit run inside a
+        # link is a marketplace id and is exempt.
         for case in R.load_cases():
-            for gtin in G.find_gtins(case["source_text"]):
-                self.assertTrue(G.gtin_valid(gtin), case["id"])
+            source = case["source_text"]
+            spans = []
+            for url in G.find_links(source):
+                start = source.find(url)
+                if start != -1:
+                    spans.append((start, start + len(url)))
+            for match in GTIN_RUN.finditer(source):
+                if any(start <= match.start() and match.end() <= end
+                       for start, end in spans):
+                    continue
+                self.assertTrue(G.gtin_valid(match.group(0)),
+                                "%s: %s" % (case["id"], match.group(0)))
+
+    def test_every_gtin_a_case_declares_is_a_valid_gtin(self):
+        for case in R.load_cases():
+            for side in ("gold", "extractor_output"):
+                for item in case[side]["items"]:
+                    gtin = item.get("gtin")
+                    if gtin is None:
+                        continue
+                    self.assertTrue(G.gtin_valid(gtin),
+                                    "%s %s: %r" % (case["id"], side, gtin))
 
     def test_no_marketplace_id_is_also_a_valid_gtin(self):
         # A marketplace item number with a valid GS1 check digit would be read
