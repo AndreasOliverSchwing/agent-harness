@@ -172,8 +172,10 @@ _URL = re.compile(r'https?://[^\s<>"\\\]“”]+', re.IGNORECASE)
 
 # Sentence punctuation that follows a link but does not belong to it: closing
 # brackets, a full stop, comma, semicolon, colon, "!", an apostrophe, Markdown
-# bold and the German quotes.
-_TRAILING_PUNCTUATION = re.compile(r"[)>\].,;:!'\"*“”‘’]+$")
+# bold and the German quotes. str.rstrip of these characters is linear; the
+# regex that used to do this job backtracked quadratically on a long run of ")"
+# inside a link (20,000 characters took about a second).
+_TRAILING_PUNCTUATION = ")>].,;:!'\"*“”‘’"
 
 # Marketplace product paths. The host is checked separately, so a path that
 # looks like a product path on another host stays an ordinary link. The path is
@@ -898,10 +900,14 @@ def _clean_link(url):
     "https://a.example.com/x?y=1)." becomes "https://a.example.com/x". The
     order matters: the closing ")" must go before the query is cut, otherwise
     "?y=1)." would look like part of the query.
+
+    The strip is a str.rstrip of a fixed set of characters, so the cost is
+    linear in the length of the link. A regex with a "$" anchor is not: on a
+    long run of ")" inside a link it retried from every position.
     """
     if not isinstance(url, str):
         return ""
-    url = _TRAILING_PUNCTUATION.sub("", url.strip())
+    url = url.strip().rstrip(_TRAILING_PUNCTUATION)
     cut = len(url)
     for character in "?#":
         position = url.find(character)

@@ -21,6 +21,11 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- Link scanning is linear in the length of the text. `_clean_link` strips the
+  prose punctuation with `str.rstrip` instead of a `$`-anchored regex, which
+  retried from every position: a 20,000-character link holding a long run of
+  `)` took about a second and now takes about a millisecond. A timing test
+  guards the bound.
 - Link detection keeps the address and drops the prose around it. A trailing
   German closing quote, `!`, `'`, `**`, `:` or bracket no longer becomes part of
   the link, and a Markdown `[url](url)` yields the address instead of the

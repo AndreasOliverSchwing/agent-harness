@@ -236,6 +236,9 @@ name", not as a recall rate on real extractor output.
   `aliexpress.com` and their siblings. Any subdomain of one of those counts.
   `amazon.example.com` and `www.ebay.attacker.example` do not: a path that looks
   like a product path on another domain is never read as a product.
+- **Untrusted text stays cheap.** Link scanning is linear in the length of the
+  text: a 20,000-character line with a long punctuation run finishes in about a
+  millisecond. A timing test in the suite holds that bound.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.

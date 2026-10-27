@@ -21,6 +21,7 @@ The tests are split by contract, not by function name:
 import copy
 import os
 import sys
+import time
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -526,6 +527,38 @@ class ProductLinkIdTest(unittest.TestCase):
                          "ASIN:B0TEST1234")
         self.assertEqual(G.product_link_id(
             "https://www.amazon.de/GP/Product/B0TEST1234"), "ASIN:B0TEST1234")
+
+
+class LinkRegexCostTest(unittest.TestCase):
+    """The link regexes stay linear on untrusted text (QA 15).
+
+    A supplier mail is untrusted input. A regex that backtracks quadratically on
+    it turns one mail into a CPU burn, so the cost of the link path is measured
+    here. The bound is generous: the linear code needs about a millisecond, the
+    quadratic code needed 0.8 s at this length.
+    """
+
+    LENGTH = 20000
+    BOUND_SECONDS = 0.1
+
+    def test_find_links_is_linear_on_a_long_punctuation_run(self):
+        text = "https://a.example.com/x" + ")" * self.LENGTH + "y"
+        started = time.perf_counter()
+        G.find_links(text)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "find_links took %.3f s on %d characters"
+                        % (elapsed, len(text)))
+
+    def test_ground_is_linear_on_a_long_link_line(self):
+        source = ("Acme Tools\n4x https://a.example.com/x"
+                  + ")" * self.LENGTH + "y\n")
+        started = time.perf_counter()
+        G.ground({"items": []}, source)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters"
+                        % (elapsed, len(source)))
 
 
 class GroundUncoveredLinkTest(unittest.TestCase):
