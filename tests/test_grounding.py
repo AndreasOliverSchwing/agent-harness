@@ -1625,7 +1625,23 @@ class GroundVariantSplitTest(unittest.TestCase):
         conflicts = [f for f in merged if f["field"] == "link"]
         self.assertEqual(len(conflicts), 1)
         self.assertEqual(conflicts[0]["old_value"], EBAY_LINK)
-        self.assertEqual(conflicts[0]["new_value"], AMAZON_LINK)
+
+    def test_a_conflict_finding_writes_nothing_so_it_has_no_new_value(self):
+        # N4 from the 2026-10-27 recheck. The survivor keeps its own link, so
+        # nothing was written: new_value must be None, and the value the
+        # survivor kept is named in the evidence.
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4, "link": AMAZON_LINK},
+            {"part_number": "AC-4417", "link": EBAY_LINK},
+        ]}
+        source = "Acme Tools\npart AC-4417\n%s\n" % AMAZON_LINK
+        checked, findings = G.ground(extraction, source)
+        conflict = [f for f in findings if f["field"] == "link"]
+        self.assertEqual(len(conflict), 1)
+        self.assertIsNone(conflict[0]["new_value"])
+        self.assertEqual(conflict[0]["old_value"], EBAY_LINK)
+        self.assertEqual(checked["items"][0]["link"], AMAZON_LINK)
+        self.assertIn(AMAZON_LINK, conflict[0]["evidence"])
 
     def test_merge_keeps_gtin_conflict_in_the_finding(self):
         extraction = {"items": [

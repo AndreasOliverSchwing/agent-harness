@@ -58,7 +58,9 @@ eight keys and no others. The rules, once, for all six checks:
                    the key was absent or empty.
     new_value      what this module wrote into that key. None when it wrote
                    nothing, which is what a "flagged" or "reported" finding
-                   does. For the list key other_ids it is the entry added.
+                   does, and what a VARIANT_SPLIT conflict does: the survivor
+                   keeps its own value. For the list key other_ids it is the
+                   entry added.
     item_index     index of the item in the RETURNED items list. None when no
                    item is concerned.
     input_index    index of that item in the list the caller passed in. None
@@ -116,7 +118,8 @@ Codes and actions in this module:
                                  lines carry differently stays on the survivor
                                  and is reported as one more VARIANT_SPLIT
                                  finding for that field, with old_value the
-                                 merged line's value.
+                                 merged line's value and new_value None,
+                                 because nothing was written.
 
 A link is a product link only when product_link_id() returns an id for it. A
 link to any other host is not a product and is never added as an item.
@@ -1053,8 +1056,10 @@ def _check_variant_split(items, origins):
     A merge must not lose data. The variant's link, gtin and other_ids move to
     the survivor when the survivor lacks them. When both lines carry a
     different value for one key, the survivor keeps its own and the variant's
-    value is named in the finding, with uncertain set. other_ids is a list, so
-    both values are kept and there is no conflict.
+    value is named in the finding, with uncertain set. Nothing is written for a
+    conflict, so its new_value is None and the evidence names the value the
+    survivor kept. other_ids is a list, so both values are kept and there is no
+    conflict.
 
     The merges are found first and applied afterwards, in input order. Notes
     therefore read the way the source lists the variants, and an item_index is
@@ -1127,7 +1132,7 @@ def _check_variant_split(items, origins):
                          % (key, theirs, ours),
                 field=key,
                 old_value=theirs,
-                new_value=ours,
+                new_value=None,
                 item_index=position,
                 input_index=variant_input))
     findings.sort(key=lambda finding: (finding["item_index"],

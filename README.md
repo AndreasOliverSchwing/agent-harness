@@ -183,6 +183,9 @@ and the new one for others. Read `old_value` and `new_value`.
 
 `new_value` is `None` for a `flagged` or `reported` finding, because neither
 writes anything. A `reported` finding names the value it is about in `evidence`.
+A `VARIANT_SPLIT` conflict is the same: the survivor keeps its own value, so
+nothing is written and `new_value` is `None`. The variant's value is in
+`old_value` and the survivor's value is named in `evidence`.
 For the list key `other_ids`, `new_value` is the entry that was added.
 
 `VARIANT_SPLIT` is the one code where the two indexes differ: `item_index` is

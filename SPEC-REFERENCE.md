@@ -373,6 +373,9 @@ Rules:
   for others. Read `old_value` and `new_value`.
 - `new_value` is `None` for `flagged` and `reported`: neither writes anything. A
   `reported` finding names the value it is about in `evidence`.
+- `new_value` is also `None` for a `VARIANT_SPLIT` conflict. The survivor keeps
+  its own value, so nothing is written; `old_value` is the merged line's value
+  and `evidence` names the value the survivor kept.
 - For the list key `other_ids`, `new_value` is the entry that was added.
 - `other_ids` entries must be strings. A check that reads `other_ids` skips every
   entry that is not a string, and every blank string, so a caller-supplied dict,
