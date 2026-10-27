@@ -427,6 +427,32 @@ class FindLinksTest(unittest.TestCase):
         self.assertEqual(G.find_links("Hex bolt M8, part AC-4417"), [])
         self.assertEqual(G.find_links(None), [])
 
+    def test_find_links_strips_prose_punctuation(self):
+        # QA 12: a German closing quote, an exclamation mark, an apostrophe,
+        # Markdown bold and a colon all follow a link in real mail text.
+        text = ("Siehe https://www.amazon.de/dp/B0TEST1234“ "
+                "Toll https://www.ebay.de/itm/123456789001! "
+                "Kauf https://www.amazon.de/dp/B0TEST5678' "
+                "Fett **https://www.ebay.de/itm/123456789002** "
+                "Ende https://www.amazon.de/dp/B0TEST9012: "
+                "Zitat https://www.ebay.de/itm/123456789003”")
+        self.assertEqual(G.find_links(text), [
+            "https://www.amazon.de/dp/B0TEST1234",
+            "https://www.ebay.de/itm/123456789001",
+            "https://www.amazon.de/dp/B0TEST5678",
+            "https://www.ebay.de/itm/123456789002",
+            "https://www.amazon.de/dp/B0TEST9012",
+            "https://www.ebay.de/itm/123456789003",
+        ])
+
+    def test_find_links_handles_markdown_link_syntax(self):
+        # QA 12: "[url](url)" used to yield one garbled link.
+        text = ("[https://www.amazon.de/dp/B0TEST1234]"
+                "(https://www.amazon.de/dp/B0TEST1234)")
+        self.assertEqual(G.find_links(text), [AMAZON_LINK])
+        self.assertEqual(G.find_links(
+            "[Hex bolt M8](https://www.ebay.de/itm/123456789001)"), [EBAY_LINK])
+
 
 class ProductLinkIdTest(unittest.TestCase):
     """product_link_id decides whether a link is a product and what its id is."""
@@ -492,6 +518,15 @@ class ProductLinkIdTest(unittest.TestCase):
         self.assertIsNone(G.product_link_id("https://www.amazon.de/"))
         self.assertIsNone(G.product_link_id(None))
 
+    def test_product_link_id_accepts_an_upper_case_dp_path(self):
+        # QA 12: suppliers copy the path out of a browser in either case.
+        self.assertEqual(G.product_link_id("https://www.amazon.de/DP/B0TEST1234"),
+                         "ASIN:B0TEST1234")
+        self.assertEqual(G.product_link_id("https://www.amazon.de/Dp/B0TEST1234"),
+                         "ASIN:B0TEST1234")
+        self.assertEqual(G.product_link_id(
+            "https://www.amazon.de/GP/Product/B0TEST1234"), "ASIN:B0TEST1234")
+
 
 class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""
@@ -552,6 +587,15 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         checked, findings = G.ground({"items": []}, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"], [])
+
+    def test_ground_adds_the_clean_link_from_markdown(self):
+        # QA 12: the appended item must hold the address, not "](" glue.
+        source = ("Acme Tools\n"
+                  "4x [Hex bolt M8](https://www.amazon.de/dp/B0TEST1234)\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([f["new_value"] for f in findings], [AMAZON_LINK])
+        self.assertEqual(checked["items"][0]["link"], AMAZON_LINK)
+        self.assertEqual(checked["items"][0]["quantity"], 4)
 
 
 class GroundRedactedLinkTest(unittest.TestCase):

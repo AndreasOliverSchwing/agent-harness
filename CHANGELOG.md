@@ -21,6 +21,11 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- Link detection keeps the address and drops the prose around it. A trailing
+  German closing quote, `!`, `'`, `**`, `:` or bracket no longer becomes part of
+  the link, and a Markdown `[url](url)` yields the address instead of the
+  `](`-glued text that used to land in an appended item. `/DP/` is matched in
+  any case, so `/DP/`, `/Dp/` and `/GP/Product/` all give the same ASIN.
 - `product_link_id` accepts only real marketplace hosts. The host must reduce to
   a registrable domain in `MARKETPLACE_DOMAINS` (`amazon.de`, `amazon.com`,
   `ebay.co.uk`, `aliexpress.com`, ...). `amazon.example.com`,

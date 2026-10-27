@@ -165,15 +165,21 @@ _DIGIT_RUN = re.compile(r"(?<!\d)\d{8,14}(?!\d)")
 _WORD = re.compile(r"[^\W\d_]+")
 
 # A link ends at whitespace or at a character that cannot be part of a URL in
-# prose. The trailing punctuation of a sentence is removed in _clean_link.
-_URL = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
+# prose: angle brackets, the double quote, the backslash, the closing square
+# bracket of Markdown "[url](url)" and the curly quotes a German mail uses. The
+# trailing punctuation of a sentence is removed in _clean_link.
+_URL = re.compile(r'https?://[^\s<>"\\\]“”]+', re.IGNORECASE)
 
-# Sentence punctuation that follows a link but does not belong to it.
-_TRAILING_PUNCTUATION = re.compile(r"[)>\].,;]+$")
+# Sentence punctuation that follows a link but does not belong to it: closing
+# brackets, a full stop, comma, semicolon, colon, "!", an apostrophe, Markdown
+# bold and the German quotes.
+_TRAILING_PUNCTUATION = re.compile(r"[)>\].,;:!'\"*“”‘’]+$")
 
 # Marketplace product paths. The host is checked separately, so a path that
-# looks like a product path on another host stays an ordinary link.
-_AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Za-z0-9]{10})(?=/|$)")
+# looks like a product path on another host stays an ordinary link. The path is
+# matched in any case: suppliers copy "/DP/" as often as "/dp/".
+_AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Za-z0-9]{10})(?=/|$)",
+                          re.IGNORECASE)
 _EBAY_ITEM = re.compile(r"/itm/(\d+)")
 _ALIEXPRESS_ITEM = re.compile(r"/item/(\d+)")
 
@@ -312,10 +318,13 @@ def normalize_id(value):
 def find_links(text):
     """Return the http(s) links in text, in order of appearance, without repeats.
 
-    A link ends at the first whitespace. Punctuation that closes the sentence
-    around the link -- ")", ">", "]", ",", ".", ";" -- is removed, because it
-    belongs to the prose and not to the address. Query and fragment are
-    removed: two links that differ only in "?tag=..." or "#top" are one link.
+    A link ends at the first whitespace or at a character that cannot be part of
+    a URL in prose. Punctuation that closes the sentence around the link -- ")",
+    ">", "]", ",", ".", ";", ":", "!", "'", Markdown "**" and the German quotes
+    -- is removed, because it belongs to the prose and not to the address. A
+    Markdown "[url](url)" therefore yields the address, not the glue between the
+    two halves. Query and fragment are removed: two links that differ only in
+    "?tag=..." or "#top" are one link.
 
         find_links("see https://a.example.com/x?y=1).")  # ["https://a.example.com/x"]
 
