@@ -181,6 +181,20 @@ and `notamazon.de` are other people's domains; a product id read from them would
 point at a product that cannot be checked, and `UNCOVERED_LINK` would then append
 an item for a link that is not a shop's product page at all.
 
+The id must also have the length its marketplace uses:
+
+| Path | Digits | Id |
+|---|---|---|
+| `/dp/B0TEST1234`, `/gp/product/B0TEST1234` | 10, letters and digits | `ASIN:B0TEST1234` |
+| `/itm/<number>` | 9 to 13 | `EBAY:<number>` |
+| `/item/<number>` | 9 to 17 | `ALIEXPRESS:<number>` |
+
+A shorter or longer digit run is not a product link: `product_link_id()` returns
+`None` and the link is an ordinary link. The bound is what keeps the covered-link
+index linear. Every distinct id length adds one form length to that index, and
+the index holds every substring of that length, so an unbounded id length let one
+98 KB mail of hostile links cost gigabytes.
+
 An item covers a link when it holds the same cleaned link, or when the id of the
 link occurs in its `part_number`, its `other_ids` or its own `link`. The covered
 links are indexed once per mail, in a set of cleaned urls and a set of id forms,

@@ -292,12 +292,17 @@ name", not as a recall rate on real extractor output.
 
 ### Limits
 
-- **A product link needs a real marketplace host.** `product_link_id()` accepts
+- **A product link needs a real marketplace host and a real id length.**
+  `product_link_id()` accepts
   only the registrable domains in `MARKETPLACE_DOMAINS`: `amazon.de`,
   `amazon.com`, `amazon.co.uk`, `ebay.de`, `ebay.com`, `ebay.co.uk`,
   `aliexpress.com` and their siblings. Any subdomain of one of those counts.
   `amazon.example.com` and `www.ebay.attacker.example` do not: a path that looks
   like a product path on another domain is never read as a product.
+  The id must have the length its marketplace uses: an eBay item number has 9
+  to 13 digits, an AliExpress item id 9 to 17. A shorter or longer digit run is
+  not a product link, so `.../itm/12345678` and `.../itm/<25 digits>` are
+  ordinary links.
 - **Untrusted text stays cheap.** Link scanning is linear in the length of the
   text: a 20,000-character line with a long punctuation run finishes in about a
   millisecond. The identifier path is linear too: the quantity label (`qty`,

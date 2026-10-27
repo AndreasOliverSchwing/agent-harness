@@ -166,6 +166,16 @@ below is one card of that round.
   `reported`, in both modes. A non-bool `apply` raises `TypeError`; the flag is
   keyword-only. Documented in `README.md`, `SPEC-REFERENCE.md` and the module
   docstring.
+- **A marketplace id has a real length, so a mail of hostile links stays linear
+  (B1′).** `_EBAY_ITEM` and `_ALIEXPRESS_ITEM` accepted a digit run of any
+  length. Every distinct id length became a form length in the covered-link
+  index, and the index held every substring of every one of those lengths, so
+  one untrusted mail cost gigabytes: 24 KB took 0.95 s and 229 MB, 98 KB took
+  11.25 s and 2,528 MB. An eBay item number has 9 to 13 digits and an
+  AliExpress item id 9 to 17; a shorter or longer run is not a product link, so
+  `product_link_id()` returns `None` for it. The same two mails now take 0.03 s
+  and 2 MB, and 0.11 s and 7 MB. Documented in `SPEC-REFERENCE.md`, `README.md`
+  and the `product_link_id()` docstring.
 
 ### Fixed in the second review round
 

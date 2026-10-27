@@ -289,8 +289,12 @@ _TRAILING_PUNCTUATION = ")>].,;:!'\"*“”‘’"
 # matched in any case: suppliers copy "/DP/" as often as "/dp/".
 _AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Za-z0-9]{10})(?=/|$)",
                           re.IGNORECASE)
-_EBAY_ITEM = re.compile(r"/itm/(\d+)")
-_ALIEXPRESS_ITEM = re.compile(r"/item/(\d+)")
+# An eBay item number has 9 to 13 digits, an AliExpress item id 9 to 17. The
+# run is bounded on both sides of the count: a shorter or longer run is not a
+# product link. Without the bound every distinct id length became a form length
+# in the covered-link index, and one mail of 98 KB cost gigabytes (B1').
+_EBAY_ITEM = re.compile(r"/itm/(\d{9,13})(?!\d)")
+_ALIEXPRESS_ITEM = re.compile(r"/item/(\d{9,17})(?!\d)")
 
 # The registrable domain of every marketplace this module recognises, mapped to
 # the marketplace name. A host is a marketplace host only when its registrable
@@ -740,6 +744,10 @@ def product_link_id(url):
     The ASIN is upper-cased, so a link written in lower case gives the same id.
     A path segment before "/dp/" is allowed: Amazon puts the product title
     there. Any subdomain of a marketplace domain is that marketplace.
+
+    An id has the length its marketplace uses: 9 to 13 digits for an eBay item
+    number and 9 to 17 for an AliExpress item id. A shorter or longer digit run
+    is not a product link and gives None.
     """
     if not isinstance(url, str):
         return None

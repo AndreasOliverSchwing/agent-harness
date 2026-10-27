@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import time
+import tracemalloc
 import unittest
 from decimal import Decimal
 
@@ -44,6 +45,22 @@ def ground_write(*args, **kwargs):
     kwargs.setdefault("apply", True)
     return G.ground(*args, **kwargs)
 
+
+def _measure(call):
+    """Return (result, seconds, peak bytes) for one call.
+
+    tracemalloc is started for the call only, so the peak is the memory that
+    call allocated and not what the rest of the suite already holds.
+    """
+    tracemalloc.start()
+    try:
+        started = time.perf_counter()
+        result = call()
+        elapsed = time.perf_counter() - started
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return result, elapsed, peak
 
 
 # No digit run of GTIN length: isolates the identifier checks from MISSING_GTIN.
@@ -982,6 +999,31 @@ class ProductLinkIdTest(unittest.TestCase):
         for url, expected in cases:
             self.assertEqual(G.product_link_id(url), expected, url)
 
+    def test_product_link_id_accepts_the_real_marketplace_id_lengths(self):
+        # B1': an eBay item number has 9 to 13 digits, an AliExpress item id 9
+        # to 17. The bounds are documented in SPEC-REFERENCE.md.
+        cases = [
+            ("https://www.ebay.de/itm/123456789001", "EBAY:123456789001"),
+            ("https://www.ebay.de/itm/1234567890123", "EBAY:1234567890123"),
+            ("https://de.aliexpress.com/item/1005001234567",
+             "ALIEXPRESS:1005001234567"),
+            ("https://de.aliexpress.com/item/1005001234567890",
+             "ALIEXPRESS:1005001234567890"),
+        ]
+        for url, expected in cases:
+            self.assertEqual(G.product_link_id(url), expected, url)
+
+    def test_product_link_id_rejects_a_digit_run_that_is_not_an_id(self):
+        # B1': a shorter or longer run is not a product link. Without the
+        # bound, every distinct id length became a form length in the
+        # covered-link index.
+        for url in ("https://www.ebay.de/itm/12345678",
+                    "https://www.ebay.de/itm/12345678901234",
+                    "https://www.ebay.de/itm/1234567890123456789012345",
+                    "https://de.aliexpress.com/item/12345678",
+                    "https://de.aliexpress.com/item/123456789012345678"):
+            self.assertIsNone(G.product_link_id(url), url)
+
     def test_product_link_id_rejects_short_or_missing_path(self):
         # An ASIN is exactly 10 characters; 9 is not an ASIN.
         self.assertIsNone(G.product_link_id("https://www.amazon.de/dp/B0TEST123"))
@@ -1276,6 +1318,74 @@ class HostileMailCostTest(unittest.TestCase):
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "ground took %.3f s on %d characters beside a long id"
                         % (elapsed, len(source)))
+
+
+class MarketplaceLinkCostTest(unittest.TestCase):
+    """A mail of hostile links stays linear (B1').
+
+    `_EBAY_ITEM` and `_ALIEXPRESS_ITEM` accepted a digit run of any length, so
+    the covered-link index got one form length per distinct id length and built
+    every substring of every one of them. The reviewer measured 305 MB at
+    24 KB and 3.2 GB at 98 KB. A real marketplace id has 9 to 17 digits, so a
+    shorter or longer run is not a product link and never reaches the index.
+
+    The bounds are generous: the bounded code needs about a twentieth of a
+    second and a few megabytes at these sizes.
+    """
+
+    BOUND_SECONDS = 1.0
+
+    def _hostile_links(self, count):
+        """One eBay link per line, line k holding a k-digit id."""
+        digits = "1234567" * 60
+        return "\n".join("https://www.ebay.de/itm/%s" % digits[:length]
+                         for length in range(1, count + 1))
+
+    def test_ninety_eight_kilobytes_of_hostile_links_is_linear(self):
+        source = self._hostile_links(420)
+        self.assertEqual(len(source.encode()), 98909)
+        (checked, findings), elapsed, peak = _measure(
+            lambda: ground_write({"items": []}, source))
+        # Five of the 420 runs have a real id length, so the check has real
+        # work to do: it may not pass by finding nothing.
+        self.assertEqual(len(findings), 5)
+        self.assertEqual(len(checked["items"]), 5)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters of links"
+                        % (elapsed, len(source)))
+        self.assertLess(peak, 100 * 1024 * 1024,
+                        "ground peaked at %.0f MB on %d characters of links"
+                        % (peak / 1e6, len(source)))
+
+    def test_twenty_four_kilobytes_of_hostile_links_stays_small(self):
+        source = self._hostile_links(200)
+        self.assertEqual(len(source.encode()), 25099)
+        # Both modes. The default appends the same five items and suggests no
+        # quantity, because no line carries one; apply=True writes no quantity
+        # either.
+        (checked, findings), elapsed, peak = _measure(
+            lambda: G.ground({"items": []}, source))
+        self.assertEqual([finding["action"] for finding in findings],
+                         ["added"] * 5)
+        self.assertEqual([item.get("quantity") for item in checked["items"]],
+                         [None] * 5)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "the default took %.3f s on %d characters of links"
+                        % (elapsed, len(source)))
+        self.assertLess(peak, 50 * 1024 * 1024,
+                        "the default peaked at %.0f MB on %d characters"
+                        % (peak / 1e6, len(source)))
+        (checked, findings), elapsed, peak = _measure(
+            lambda: ground_write({"items": []}, source))
+        self.assertEqual(len(findings), 5)
+        self.assertEqual([item.get("quantity") for item in checked["items"]],
+                         [None] * 5)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "apply=True took %.3f s on %d characters of links"
+                        % (elapsed, len(source)))
+        self.assertLess(peak, 50 * 1024 * 1024,
+                        "apply=True peaked at %.0f MB on %d characters"
+                        % (peak / 1e6, len(source)))
 
 
 class GroundUncoveredLinkTest(unittest.TestCase):
