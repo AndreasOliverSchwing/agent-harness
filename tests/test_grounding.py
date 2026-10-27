@@ -1574,6 +1574,65 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["quantity"], 4)
 
 
+class UncoveredLinkQuantityTest(unittest.TestCase):
+    """Fix round 3, card 3.3: an uncovered link takes its own quantity (S5').
+
+    A supplier writes the quantity above the position as often as below it.
+    The link above a quantity line already took that number, so it must not
+    also claim the line below it. And only a product link claims anything: a
+    PDF address is not a position.
+
+    The quantity is only suggested by default and written with apply=True, so
+    every layout is read in both modes: the value the default suggests and the
+    value apply=True writes must be the same.
+    """
+
+    A = "https://www.amazon.de/dp/B0TESTAAA1"
+    B = "https://www.amazon.de/dp/B0TESTAAA2"
+    C = "https://www.amazon.de/dp/B0TESTAAA3"
+
+    def _quantities(self, source, apply):
+        """Return one quantity per appended item, read from that mode's output."""
+        checked, findings = G.ground({"items": []}, source, apply=apply)
+        if apply:
+            return [item.get("quantity") for item in checked["items"]]
+        return [finding["new_value"] for finding in findings
+                if finding["action"] == "suggested"]
+
+    def test_a_link_that_took_the_quantity_above_it_claims_no_line_below(self):
+        # S5': "2 Stück" above A is A's own quantity, so A claims nothing
+        # below. Every link reads the quantity directly above itself.
+        source = "2 St\u00fcck\n%s\n3 St\u00fcck\n%s\n4 St\u00fcck\n%s" % (
+            self.A, self.B, self.C)
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                self.assertEqual(self._quantities(source, apply), [2, 3, 4])
+
+    def test_two_links_take_the_quantity_above_each_of_them(self):
+        # S5': the second link used to take the line below the first link.
+        source = "2 St\u00fcck\n%s\n3 St\u00fcck\n%s" % (self.A, self.B)
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                self.assertEqual(self._quantities(source, apply), [2, 3])
+
+    def test_an_address_that_is_not_a_product_link_claims_nothing(self):
+        # S5': a datasheet URL is not a position, so the link below it reads
+        # the quantity line between them.
+        source = ("Datenblatt: https://www.example.com/datenblatt-ac44170.pdf\n"
+                  "3 St\u00fcck\n%s" % self.A)
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                self.assertEqual(self._quantities(source, apply), [3])
+
+    def test_the_quantity_below_layout_still_works(self):
+        # S5' must not break the layout it was written for: the quantity under
+        # a bare link is that link's quantity.
+        source = "%s\n2 St\u00fcck\n%s\n3 St\u00fcck" % (self.A, self.B)
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                self.assertEqual(self._quantities(source, apply), [2, 3])
+
+
 class GroundRedactedLinkTest(unittest.TestCase):
     """REDACTED_LINK: restore a product link that a redaction cut in two."""
 

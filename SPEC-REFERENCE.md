@@ -358,12 +358,15 @@ not inherit the 4.
 
 A link with nothing in front of it on its line reads the line directly above,
 and only that line. That line must hold nothing but a quantity, and no link on
-the line above that may own it: a link with no quantity of its own claims the
-line below it, so `"<a>\n2 Stück\n<b>"` gives `<a>` the 2 and `<b>` nothing. A
-blank line is layout, so nothing beyond it is borrowed. A link alone on its line
-also reads the line directly below, because a supplier writes the quantity under
-the position as often as above it: `"<a>\n2 Stück\n<b>\n3 Stück"` is 2 and 3. A
-link with no quantity of its own gets none.
+the line above that may own it: a link claims the line below it only when it is
+a product link and took no quantity from its own line or from the line above, so
+`"<a>\n2 Stück\n<b>"` gives `<a>` the 2 and `<b>` nothing. A blank line is
+layout, so nothing beyond it is borrowed. A link alone on its line also reads the
+line directly below, because a supplier writes the quantity under the position
+as often as above it: `"<a>\n2 Stück\n<b>\n3 Stück"` is 2 and 3, and
+`"2 Stück\n<a>\n3 Stück\n<b>"` is 2 and 3 too. An address that is not a product
+link (a datasheet PDF, an order page) claims nothing, so the link below it reads
+the quantity line between them. A link with no quantity of its own gets none.
 
 The number pattern starts on a left boundary, so `1.000.000 Stück` reads as
 1000000 and not as its last group `000`.

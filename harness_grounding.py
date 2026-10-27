@@ -1960,20 +1960,33 @@ def _link_id_forms(link_id):
     return [form for form in forms if form]
 
 
-def _claims_the_line_below(line):
-    """Return True when the first link on a line has no quantity of its own.
+def _claims_the_line_below(lines, line_index):
+    """Return True when the link on this line takes the quantity below it.
 
     A supplier writes the quantity under the position as often as above it, so
-    "2 St\\u00fcck" below a bare link is that link's quantity, and the next link
-    must not borrow it. A link that already carries its quantity in front of it
-    ("4x <link>") claims nothing below: the line under it belongs to the next
-    position. A line with no link claims nothing.
+    "2 St\u00fcck" below a bare product link is that link's quantity, and the next
+    link must not borrow it.
+
+    Only a product link claims anything: a datasheet or an order address is not
+    a position, so it owns no quantity line. A link that already took its
+    quantity from its own line ("4x <link>") or from the line above it claims
+    nothing below either: that number is its quantity, and the line under it
+    belongs to the next position.
     """
+    line = lines[line_index]
     match = _URL.search(line)
     if match is None:
         return False
+    if product_link_id(_clean_link(match.group(0))) is None:
+        return False
     segment = _without_markdown_text(line[:match.start()])
-    return _QTY_BEFORE.search(segment) is None
+    if _QTY_BEFORE.search(segment) is not None:
+        return False
+    if line_index > 0:
+        above = lines[line_index - 1].strip()
+        if _previous_line_quantity(above) is not None:
+            return False
+    return True
 
 
 def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
@@ -1992,7 +2005,9 @@ def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
     A link that is alone on its line also takes the quantity on the line
     directly below it, because a supplier writes the quantity under the
     position as often as above it. The second link of "4x <a> <b>" does not:
-    the line below belongs to the line, not to one of two links.
+    the line below belongs to the line, not to one of two links. The link above
+    must not claim that line either: it claims it only when it has no quantity
+    of its own and no quantity above itself (_claims_the_line_below).
     """
     match = _QTY_BEFORE.search(_without_markdown_text(segment))
     if match:
@@ -2001,7 +2016,7 @@ def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
         quantity = _previous_line_quantity(lines[line_index - 1].strip())
         if quantity is not None:
             above = line_index - 2
-            if not (above >= 0 and _claims_the_line_below(lines[above])):
+            if not (above >= 0 and _claims_the_line_below(lines, above)):
                 return quantity
     if only_on_line and line_index + 1 < len(lines):
         return _previous_line_quantity(lines[line_index + 1].strip())

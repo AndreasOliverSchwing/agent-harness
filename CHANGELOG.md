@@ -193,6 +193,17 @@ below is one card of that round.
   `1.000`, `1.000.000`, `1,5`, `12,50`, `1.234,56` and `1,234.56` keep their
   values. Documented in `SPEC-REFERENCE.md`, `README.md` and the module
   docstring.
+- **An uncovered link takes its own quantity, never the line below its
+  neighbour's (S5′).** In the "quantity above the link" layout a link claimed
+  the line below it even after it had already taken the quantity above itself,
+  and any URL claimed it. `2 Stück / <a> / 3 Stück / <b> / 4 Stück / <c>` gave
+  `[2, 4, None]` and now gives `[2, 3, 4]`; a datasheet PDF above a quantity
+  line made the link below it read `None` instead of 3. Only a product link
+  claims the line below, and only when it took no quantity from its own line or
+  from the line above. The quantity-below layout is unchanged: `<a> / 2 Stück /
+  <b> / 3 Stück` is still 2 and 3. Both modes are tested. Documented in
+  `SPEC-REFERENCE.md`, `README.md` and the `_claims_the_line_below()` and
+  `_link_quantity()` docstrings.
 
 ### Fixed in the second review round
 

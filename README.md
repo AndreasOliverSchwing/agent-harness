@@ -385,8 +385,11 @@ name", not as a recall rate on real extractor output.
   quantity, and neither does a bare fraction alone above a link (`12,50`).
   Two links on one line get one quantity each. A link with no quantity in front
   of it reads the line directly above, and only that line: that line must hold
-  nothing but a quantity, and no link above it may own it. A link with no
-  quantity of its own claims the line below it. A blank line is layout, so
+  nothing but a quantity, and no link above it may own it. Only a product link
+  claims the line below it, and only when it took no quantity from its own line
+  or from the line above, so `"2 Stück\n<a>\n3 Stück\n<b>"` gives each link the
+  number above itself. An address that is not a product link (a datasheet, an
+  order page) claims nothing. A blank line is layout, so
   nothing beyond it is borrowed. A link alone on its line also reads the line
   directly below, because a supplier writes the quantity under the position as
   often as above it. A link with no quantity of its own gets none. The number
