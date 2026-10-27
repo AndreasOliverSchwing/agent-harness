@@ -660,6 +660,99 @@ class GroundVariantSplitTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(len(checked["items"]), 2)
 
+    def test_indexes_point_at_the_surviving_items(self):
+        # Two part-number groups, each with its own variant line. Every merge
+        # is recorded before a later pop, so a naive index goes stale.
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417"},
+            {"description": "Washer 12 mm", "part_number": "WW-2201",
+             "quantity": 2},
+            {"description": "Washer 12 mm brass", "part_number": "WW-2201"},
+        ]}
+        source = "Acme Tools\npart AC-4417\npart WW-2201\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(len(checked["items"]), 2)
+        self.assertEqual([f["code"] for f in findings],
+                         ["VARIANT_SPLIT", "VARIANT_SPLIT"])
+        self.assertEqual([f["item_index"] for f in findings], [0, 1])
+        self.assertEqual([f["input_index"] for f in findings], [1, 3])
+        for finding in findings:
+            self.assertLess(finding["item_index"], 2)
+            item = checked["items"][finding["item_index"]]
+            self.assertEqual(item["note"], finding["new_value"])
+        self.assertEqual(checked["items"][0]["part_number"], "AC-4417")
+        self.assertEqual(checked["items"][1]["part_number"], "WW-2201")
+
+    def test_merge_moves_link_gtin_and_other_ids_to_the_survivor(self):
+        # The variant line is the only place these values occur. A merge that
+        # drops them loses data the extractor found.
+        source = ("Acme Tools\npart AC-4417\nGTIN 4006381333931\n%s\n"
+                  % AMAZON_LINK)
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "link": AMAZON_LINK, "gtin": "4006381333931",
+             "other_ids": ["SUP-77"]},
+        ]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
+        item = checked["items"][0]
+        self.assertEqual(item["link"], AMAZON_LINK)
+        self.assertEqual(item["gtin"], "4006381333931")
+        self.assertEqual(item["other_ids"], ["SUP-77"])
+        self.assertTrue(item["uncertain"])
+
+    def test_merge_keeps_survivor_value_and_reports_the_variant(self):
+        # Both lines carry a link and the two differ. The survivor keeps its
+        # own; the variant's link is not lost, it is named in the finding.
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4, "link": AMAZON_LINK},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "link": EBAY_LINK},
+        ]}
+        source = "Acme Tools\npart AC-4417\n%s\n" % AMAZON_LINK
+        checked, findings = G.ground(extraction, source)
+        merged = [f for f in findings if f["code"] == "VARIANT_SPLIT"]
+        self.assertEqual(checked["items"][0]["link"], AMAZON_LINK)
+        self.assertTrue(checked["items"][0]["uncertain"])
+        conflicts = [f for f in merged if f["field"] == "link"]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["old_value"], EBAY_LINK)
+        self.assertEqual(conflicts[0]["new_value"], AMAZON_LINK)
+
+    def test_merge_keeps_gtin_conflict_in_the_finding(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4, "gtin": "4006381333931"},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "gtin": "96385074"},
+        ]}
+        source = "Acme Tools\npart AC-4417\nGTIN 4006381333931 96385074\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(checked["items"][0]["gtin"], "4006381333931")
+        conflicts = [f for f in findings
+                     if f["code"] == "VARIANT_SPLIT" and f["field"] == "gtin"]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["old_value"], "96385074")
+
+    def test_variant_notes_keep_input_order(self):
+        # The supplier lists plain, zinc, brass. The note must read the same
+        # way round as the source, not backwards.
+        extraction = {"items": [
+            {"description": "Hex nut M8 plain", "part_number": "NW-2202",
+             "quantity": 6},
+            {"description": "Hex nut M8 zinc", "part_number": "NW-2202"},
+            {"description": "Hex nut M8 brass", "part_number": "NW-2202"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart NW-2202\n")
+        self.assertEqual(checked["items"][0]["note"],
+                         "variant: Hex nut M8 zinc · variant: Hex nut M8 brass")
+        self.assertEqual([f["input_index"] for f in findings], [1, 2])
+
 
 class GroundLinkContractTest(unittest.TestCase):
     """The new checks keep the promises ground() already made."""

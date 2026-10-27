@@ -91,7 +91,13 @@ Codes and actions in this module:
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
-                                 field is "note", new_value the note added.
+                                 field is "note", new_value the note added. Its
+                                 link, gtin and other_ids move onto the
+                                 survivor when it lacks them; a value both
+                                 lines carry differently stays on the survivor
+                                 and is reported as one more VARIANT_SPLIT
+                                 finding for that field, with old_value the
+                                 merged line's value.
 
 A link is a product link only when product_link_id() returns an id for it. A
 link to any other host is not a product and is never added as an item.
@@ -537,52 +543,119 @@ def _check_variant_split(items, origins):
     quantity. The later line has no quantity of its own because it is not a
     second position. It is merged into the first item as a note and removed, so
     the quote does not count the part twice.
+
+    A merge must not lose data. The variant's link, gtin and other_ids move to
+    the survivor when the survivor lacks them. When both lines carry a
+    different value for one key, the survivor keeps its own and the variant's
+    value is named in the finding, with uncertain set. other_ids is a list, so
+    both values are kept and there is no conflict.
+
+    The merges are found first and applied afterwards, in input order. Notes
+    therefore read the way the source lists the variants, and an item_index is
+    read from the rebuilt list instead of being recorded before a later pop
+    shifts it.
     """
-    findings = []
-    for index in range(len(items) - 1, 0, -1):
-        item = items[index]
+    survivor_for = {}
+    pairs = []
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
         number = normalize_id(item.get("part_number"))
         if len(number) < MIN_VARIANT_ID_LEN:
             continue
+        if number not in survivor_for:
+            # The first line of a part number is the survivor. It is never
+            # merged away itself, so it is always a valid merge target.
+            survivor_for[number] = index
+            continue
         if _quantity_of(item) is not None:
             continue
-        first_index = None
-        for earlier in range(index):
-            other = items[earlier]
-            if (isinstance(other, dict)
-                    and normalize_id(other.get("part_number")) == number):
-                first_index = earlier
-                break
-        if first_index is None:
-            continue
+        pairs.append((index, survivor_for[number]))
+    if not pairs:
+        return []
+
+    input_of = list(origins)
+    merges = []
+    for index, first_index in pairs:
         first = items[first_index]
-        label = item.get("description") or number
+        variant = items[index]
+        label = variant.get("description") or normalize_id(
+            first.get("part_number"))
         piece = "variant: %s" % label
         note = first.get("note")
         first["note"] = ("%s · %s" % (note, piece)) if note else piece
-        # The link is the only evidence that the variant is a real product, so
-        # it moves to the surviving item instead of disappearing with this one.
-        if isinstance(item.get("link"), str) and not first.get("link"):
-            first["link"] = item["link"]
         first["uncertain"] = True
-        # The finding concerns the line that was folded away, so input_index
-        # names it. Capture it before the pop shortens the list.
-        variant_input = origins[index]
-        items.pop(index)
-        origins.pop(index)
+        merges.append((first, _merge_variant_values(first, variant), piece,
+                       input_of[index]))
+
+    removed = set(index for index, _first_index in pairs)
+    kept = [index for index in range(len(items)) if index not in removed]
+    position_of = {}
+    for position, index in enumerate(kept):
+        position_of.setdefault(id(items[index]), position)
+    items[:] = [items[index] for index in kept]
+    origins[:] = [input_of[index] for index in kept]
+
+    findings = []
+    for first, conflicts, piece, variant_input in merges:
+        position = position_of[id(first)]
+        number = normalize_id(first.get("part_number"))
         findings.append(_finding(
             "VARIANT_SPLIT", "merged",
-            evidence="items share part number %s and \"%s\" has no quantity "
-                     "of its own, so it is a variant of the first item"
-                     % (number, label),
+            evidence="items share part number %s and the variant line has no "
+                     "quantity of its own, so it is folded into item %d"
+                     % (number, position),
             field="note",
             new_value=piece,
-            item_index=first_index,
+            item_index=position,
             input_index=variant_input))
-    findings.sort(key=lambda finding: finding["item_index"])
+        for key, theirs, ours in conflicts:
+            findings.append(_finding(
+                "VARIANT_SPLIT", "merged",
+                evidence="the merged line carries %s %s and the surviving item "
+                         "carries %s; the survivor keeps its own value and the "
+                         "merged one is reported here"
+                         % (key, theirs, ours),
+                field=key,
+                old_value=theirs,
+                new_value=ours,
+                item_index=position,
+                input_index=variant_input))
+    findings.sort(key=lambda finding: (finding["item_index"],
+                                       finding["input_index"]))
     return findings
+
+
+def _merge_variant_values(survivor, variant):
+    """Move what the variant holds and the survivor lacks. Return conflicts.
+
+    A conflict is (field, variant_value, survivor_value): both lines carry a
+    different value, the survivor keeps its own and the variant's is reported.
+    """
+    conflicts = []
+    for key in ("link", "gtin"):
+        theirs = variant.get(key)
+        if not isinstance(theirs, str) or not theirs.strip():
+            continue
+        ours = survivor.get(key)
+        if not isinstance(ours, str) or not ours.strip():
+            survivor[key] = theirs
+            continue
+        if key == "link":
+            same = (_clean_link(theirs).lower() == _clean_link(ours).lower())
+        else:
+            same = normalize_id(theirs) == normalize_id(ours)
+        if not same:
+            conflicts.append((key, theirs, ours))
+    theirs_ids = _as_list(variant.get("other_ids"))
+    if theirs_ids:
+        ours_ids = _as_list(survivor.get("other_ids"))
+        known = set(normalize_id(value) for value in ours_ids)
+        added = [value for value in theirs_ids
+                 if normalize_id(value) not in known]
+        if added:
+            survivor["other_ids"] = ours_ids + added
+    return conflicts
 
 
 def _check_missing_gtins(items, origins, source_text):

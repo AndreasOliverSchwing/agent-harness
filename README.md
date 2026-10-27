@@ -190,14 +190,18 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link from the source text |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4 | sets quantity 3, unit `set`, `uncertain: true` |
-| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note, reports `merged` |
+| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; reports `merged` |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
 module never drops an item without a finding, and never rewrites a value into
 something the source does not prove — an unsupported part number is flagged, not
 repaired, because the source does not say what the right value is.
 `VARIANT_SPLIT` is the only check that removes an item; it reports `merged` and
-keeps the part number, the link and the variant label on the surviving item.
+keeps the part number and the variant label on the surviving item. A merge never
+loses data: the variant's link, gtin and other_ids move onto the survivor when it
+lacks them. When both lines carry a different value for one key, the survivor
+keeps its own and the other value is named in the finding (`old_value`) with
+`uncertain: true`. Variant notes read in the order the source lists them.
 
 ### Synthetic benchmark
 
