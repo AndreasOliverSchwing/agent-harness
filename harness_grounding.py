@@ -293,23 +293,38 @@ MARKETPLACE_DOMAINS = {
 # GTIN from a phone number, an order number or a marketplace id: "Tel. +49 89
 # 12345670" and "Order 20261023" both carry a valid check digit. German and
 # English, because a supplier writes one or the other.
+#
+# The words are the spellings real mail carries: "GTIN", "EAN", "UPC",
+# "Barcode", "Bar-Code", "Strichcode", "Strichcodenummer", and the plurals
+# "EANs" and "Barcodes". The length suffix may follow with no separator
+# ("EAN13"), so the suffix is part of the value pattern below, not of the word.
+# "bar[\s-]*code" is one character class, not two "\s*" in a row: two would let
+# every split of a long run of spaces be tried, which is quadratic.
+_GTIN_KEYWORD_WORD = r"gtin|ean|upc|bar[\s-]*code|strichcode(?:nummer)?"
 _GTIN_KEYWORD = re.compile(
-    r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b", re.IGNORECASE)
+    r"\b(?:%s)s?" % _GTIN_KEYWORD_WORD, re.IGNORECASE)
 
 # A GTIN named by a keyword: the keyword, then at most a length suffix
-# ("EAN-13", "EAN-8") or a "Nr."/"No." label, then the digit run. Only that run
-# is the GTIN. A line may hold other numbers before or after it, and an order
-# number or a telephone number on the same line is not a GTIN.
+# ("EAN-13", "EAN13", "EAN 13") or a "Nr."/"No." label, then the digit run.
+# Only that run is the GTIN. A line may hold other numbers before or after it,
+# and an order number or a telephone number on the same line is not a GTIN.
 #
 # The suffix must end at a separator, otherwise a GTIN that starts with "13"
-# would lose its first two digits to the suffix. The run itself must not sit
-# inside a longer digit run.
+# would lose its first two digits to the suffix: "EAN 1320000000015" reads the
+# whole run, because "1320000000015" does not end after "13". The run itself
+# must not sit inside a longer digit run.
+#
+# The colon sits inside one optional group, so a run of spaces has one owner:
+# "\s*:?\s*" splits the run between two quantifiers and every split is tried,
+# which is quadratic (20,000 spaces after "ean" took 2.8 s). "\s*(?::\s*)?"
+# keeps the run with the first quantifier.
 _GTIN_VALUE = re.compile(
-    r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b"
-    r"(?:\s*[-\u2013]\s*(?:8|12|13|14|nr\.?|no\.?)(?=[\s:.])"
+    r"\b(?:%s)s?"
+    r"(?:\s*[-\u2013]\s*(?:8|12|13|14|nr\.?|no\.?)(?=[\s:.]|$)"
+    r"|\s*(?:8|12|13|14)(?=[\s:.]|$)"
     r"|\s+(?:nr\.?|no\.?)\b)?"
-    r"\s*:?\s*"
-    r"(\d{8,14})(?!\d)",
+    r"\s*(?::\s*)?"
+    r"(\d{8,14})(?!\d)" % _GTIN_KEYWORD_WORD,
     re.IGNORECASE)
 
 # The largest quantity this module reads, and the longest digit run it will

@@ -161,9 +161,11 @@ A digit run of 8, 12, 13 or 14 characters with a valid GS1 check digit is a
 candidate, not a GTIN. `MISSING_GTIN` needs two more conditions:
 
 - **The line names it.** The keyword `GTIN`, `EAN`, `UPC`, `Barcode`,
-  `Strichcode` or `bar code` must stand in front of the number (German and
-  English, any case). A length suffix or a `Nr.`/`No.` label may sit between
-  them: `EAN`, `EAN:`, `EAN-13:`, `EAN-Nr.:` all name the run that follows.
+  `Bar-Code`, `Strichcode` or `Strichcodenummer` must stand in front of the
+  number (German and English, any case, singular or plural: `EANs`,
+  `Barcodes`). A length suffix or a `Nr.`/`No.` label may sit between them, with
+  a hyphen, a space or no separator: `EAN`, `EAN:`, `EAN-13:`, `EAN13:`,
+  `GTIN-13`, `EAN-Nr.:` all name the run that follows.
   Only that run is the GTIN. Another number on the same line is not: in
   `Bestellung 20261023, Sechskantschraube M8 AC-44170, EAN 2000000000015` the
   only GTIN is `2000000000015`. `Tel. +49 89 12345670` and `Order 20261023`
@@ -219,6 +221,9 @@ the product it prices, and two siblings can share every description word.
 
 Each line is tokenised once, and the owner of a line is resolved once, no matter
 how many numbers stand on it. The GTIN check is linear in the length of the mail.
+The keyword pattern keeps a run of spaces with one quantifier: `\s*(?::\s*)?`,
+not `\s*:?\s*`, because the second form splits the run between two quantifiers
+and tries every split (20,000 spaces after `EAN` took 2.8 s; it now takes 5 ms).
 
 ### How an id is grounded
 

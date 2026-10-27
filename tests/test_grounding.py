@@ -608,6 +608,43 @@ class GtinKeywordRuleTest(unittest.TestCase):
             self.assertEqual(checked["items"][0]["gtin"], "2000000000015",
                              keyword)
 
+    # S12 from the 2026-10-27 recheck. The GTIN keyword has more spellings than
+    # "EAN" and "GTIN": a supplier attaches the length with no separator, writes
+    # the plural, hyphenates "Bar-Code" and uses "Strichcodenummer". Every
+    # spelling below must name the number that follows it.
+    def _assert_keyword_names_the_gtin(self, keyword):
+        source = ("Acme Tools\n4 x Widget assembly  %s 2000000000015\n"
+                  % keyword)
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings], ["attached"], keyword)
+        self.assertEqual(findings[0]["new_value"], "2000000000015", keyword)
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000015", keyword)
+
+    def test_keyword_ean13_without_a_separator(self):
+        self._assert_keyword_names_the_gtin("EAN13:")
+
+    def test_keyword_ean13_with_a_hyphen(self):
+        self._assert_keyword_names_the_gtin("EAN-13:")
+
+    def test_keyword_gtin13_without_a_separator(self):
+        self._assert_keyword_names_the_gtin("GTIN13:")
+
+    def test_keyword_gtin13_with_a_hyphen(self):
+        self._assert_keyword_names_the_gtin("GTIN-13:")
+
+    def test_keyword_eans_plural(self):
+        self._assert_keyword_names_the_gtin("EANs:")
+
+    def test_keyword_barcodes_plural(self):
+        self._assert_keyword_names_the_gtin("Barcodes:")
+
+    def test_keyword_bar_code_with_a_hyphen(self):
+        self._assert_keyword_names_the_gtin("Bar-Code:")
+
+    def test_keyword_strichcodenummer(self):
+        self._assert_keyword_names_the_gtin("Strichcodenummer:")
+
     def test_ground_attaches_each_gtin_to_the_part_number_on_its_line(self):
         # S6 (a) from the 2026-10-27 recheck. Two siblings share every
         # description word, so the description alone cannot separate them. Each
@@ -1028,6 +1065,37 @@ class GtinScanCostTest(unittest.TestCase):
         self.assertLess(elapsed, self.BOUND_SECONDS,
                         "find_gtins took %.3f s on %d characters of %d numbers"
                         % (elapsed, len(text), self.COUNT))
+
+
+class GtinKeywordCostTest(unittest.TestCase):
+    """The GTIN keyword scan stays linear on a long run of spaces (S12).
+
+    The value pattern wrote the separator as "\\s*:?\\s*". That splits a run of
+    spaces between two quantifiers, so every split is tried and the second
+    quantifier walks the rest of the run: 20,000 spaces after "EAN" took 2.8 s.
+    "\\s*(?::\\s*)?" keeps the run with one quantifier, and the same line
+    finishes in about 5 ms. Reverting the pattern to "\\s*:?\\s*" fails this
+    test.
+    """
+
+    SPACES = 20000
+    BOUND_SECONDS = 1.0
+
+    def test_gtin_scan_is_linear_on_a_long_run_of_spaces(self):
+        # The hostile line has the keyword and a long run of spaces but no
+        # number behind it: every split of the run is a dead end. The second
+        # line holds the real GTIN, so the test cannot pass by finding nothing.
+        source = ("Acme Tools\n4 x Widget assembly  EAN%sx\n"
+                  "4 x Widget assembly  EAN 2000000000015\n"
+                  % (" " * self.SPACES))
+        started = time.perf_counter()
+        checked, _findings = G.ground(
+            {"items": [{"description": "Widget assembly"}]}, source)
+        elapsed = time.perf_counter() - started
+        self.assertEqual(checked["items"][0].get("gtin"), "2000000000015")
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "the GTIN scan took %.3f s on %d spaces"
+                        % (elapsed, self.SPACES))
 
 
 class SetCheckCostTest(unittest.TestCase):
