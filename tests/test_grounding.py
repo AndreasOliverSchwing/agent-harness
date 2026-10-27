@@ -1173,6 +1173,62 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(checked["items"][0]["unit"], "set")
 
+    def test_a_set_line_on_another_products_line_corrects_nothing(self):
+        # S1 (a) from the 2026-10-27 recheck. Both lines carry a 2er-Pack, and
+        # the set line sits on the Kabelbinder's own line. It belongs to that
+        # product, so the screws keep their 8 pieces.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 8},
+            {"part_number": "NW-22010", "quantity": 4, "unit": "set"},
+        ]}
+        source = ("AC-44170 Schraube 2er-Pack, 8 St\u00fcck\n"
+                  "NW-22010 Kabelbinder 2er-Pack, Menge: 4 x 2")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertNotIn("unit", checked["items"][0])
+        self.assertNotIn("uncertain", checked["items"][0])
+
+    def test_a_set_line_corrects_the_product_on_its_own_line_only(self):
+        # S1 (b): the set line sits between two products. It belongs to the
+        # Kabelbinder on the line above it, never to the screws two lines below.
+        extraction = {"items": [
+            {"part_number": "NW-22010", "quantity": 3},
+            {"part_number": "AC-44170", "quantity": 6},
+        ]}
+        source = ("NW-22010 Kabelbinder 2er-Pack\n"
+                  "Menge: 3 x 2\n"
+                  "AC-44170 Schraube M8, 6 Packungen \u00e0 2er-Pack\n")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 3)
+        self.assertEqual(checked["items"][1]["quantity"], 6)
+
+    def test_a_block_of_set_lines_corrects_only_its_own_item(self):
+        # S1 (c): two set lines in one block, one product above and one below.
+        # Each set line belongs to the product next to it, so the Kabelbinder's
+        # own "3 x 2" is not replaced by the screw's "4 x 2".
+        extraction = {"items": [
+            {"part_number": "NW-22010", "quantity": 8},
+            {"part_number": "AC-44170", "quantity": 8},
+        ]}
+        source = ("NW-22010 Kabelbinder 2er-Pack, 8 St\u00fcck\n"
+                  "Menge: 3 x 2\n"
+                  "Menge: 4 x 2\n"
+                  "AC-44170 Schraube 2er-Pack, 8 St\u00fcck\n")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["item_index"], 1)
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertEqual(checked["items"][1]["quantity"], 4)
+
+    def test_the_evidence_names_the_unit_change(self):
+        # S1: the finding says what the unit becomes, not only the number.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
+        _checked, findings = G.ground(extraction, "AC-44170 2-pack\nMenge: 4 x 2")
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertIn('unit "piece" -> "set"', findings[0]["evidence"])
+
     def test_a_non_string_other_id_does_not_crash_the_set_check(self):
         # S4: other_ids is a caller-supplied list, so an entry may be any type.
         # A dict is not an id: the set check skips it instead of raising

@@ -857,18 +857,23 @@ def _check_set_multiplied(items, origins, source_text):
     text only: a pack word in the extractor's description is the extractor's
     own claim and proves nothing about the order. An item is corrected at most
     once, so a second set line cannot compound one correction into another
-    (8 -> 4 -> 2). And a set line corrects only the item it belongs to: the
-    item must be grounded on a line of the set block -- the set line itself, or
-    the line directly before or after the block -- and a pack marker that names
-    the same pack size must sit on that same line. A pack marker on another
-    product's line is another product's pack, so a missed correction is the
-    safe answer.
+    (8 -> 4 -> 2). And a set line corrects only the item it belongs to.
 
-    The lines are walked once, not once per set line. Every set line of one
-    block shares one window, so a block is resolved in a single pass over its
-    lines: each line offers the items it grounds, and the earliest set line that
-    fits an item's quantity corrects it. A mail with a thousand positions stays
-    linear, which matters on untrusted text.
+    The owning item is decided per set line, not per block of set lines. A set
+    line belongs to the items grounded on its own line; when its own line
+    grounds none, to the items grounded on the line directly above; when that
+    line grounds none either, to the items grounded on the line directly below.
+    A stack of set lines whose own lines ground nothing shares one owner line
+    (the line above the stack, else the line below it), because a supplier
+    writes one position's set lines together. A pack marker that names the same
+    pack size must sit on the set line or on the owner line. A pack marker on
+    another product's line is another product's pack, so a missed correction is
+    the safe answer.
+
+    The lines are walked once, not once per set line. Each set line offers the
+    items its owner line grounds, and the earliest set line that fits an item's
+    quantity corrects it. A mail with a thousand positions stays linear, which
+    matters on untrusted text.
     """
     findings = []
     corrected = set()
@@ -888,62 +893,61 @@ def _check_set_multiplied(items, origins, source_text):
         if 0 <= line_index < len(bodies):
             has_set[line_index] = True
             by_line.setdefault(line_index, []).append(matches[position])
-    facts = None
-    grounded = []
-    for first, last in _set_blocks(has_set):
-        # The earliest set line that fits a quantity, per pack size. A later set
-        # line of the same block could not correct the item first, so it never
-        # wins. A "1 x 1" is not a set and "0" is not an order.
-        earliest = {}
-        for line_index in range(first, last + 1):
-            for match in by_line.get(line_index, ()):
-                outer = int(match.group(1))
-                pack = int(match.group(2))
-                if outer <= 0 or pack <= 1:
-                    continue
-                key = (pack, outer * pack)
-                if key not in earliest:
-                    earliest[key] = (match.start(), outer, match)
-        if not earliest:
+    if not by_line:
+        return findings
+    facts = _line_facts(bodies)
+    grounded = _grounded_by_line(items, facts)
+    # A set line can only correct an item the extractor produced that states a
+    # quantity, so a line that grounds no such item cannot own one. This keeps
+    # an item this module appended (a placeholder built from a bare link) from
+    # taking a set line away from the product line below it.
+    correctable = [
+        [index for index in line
+         if origins[index] is not None and _quantity_of(items[index]) is not None]
+        for line in grounded]
+    owner_line = _set_owner_lines(by_line, correctable, has_set, len(bodies))
+    for line_index in sorted(by_line):
+        owner = owner_line.get(line_index)
+        if owner is None:
             continue
-        if facts is None:
-            facts = _line_facts(bodies)
-            grounded = _grounded_by_line(items, facts)
-        block_findings = []
-        for line_index in _set_block_window(has_set, first):
-            packs = facts[line_index]["packs"]
-            if not packs:
+        # The marker may sit on the set line or on the owner line. It may not
+        # sit on a third line: that is another product's pack.
+        packs = set(facts[owner]["packs"])
+        packs.update(facts[line_index]["packs"])
+        if not packs:
+            continue
+        for match in by_line[line_index]:
+            outer = int(match.group(1))
+            pack = int(match.group(2))
+            # A "1 x 1" is not a set and "0" is not an order.
+            if outer <= 0 or pack <= 1 or pack not in packs:
                 continue
-            for item_index in grounded[line_index]:
+            product = outer * pack
+            for item_index in grounded[owner]:
                 if item_index in corrected:
                     continue
                 item = items[item_index]
-                quantity = _quantity_of(item)
-                for pack in packs:
-                    entry = earliest.get((pack, quantity))
-                    if entry is None:
-                        continue
-                    start, outer, match = entry
-                    old = item.get("quantity")
-                    item["quantity"] = outer
-                    item["unit"] = "set"
-                    item["uncertain"] = True
-                    corrected.add(item_index)
-                    block_findings.append((start, item_index, _finding(
-                        "SET_MULTIPLIED", "corrected",
-                        evidence="source says \"%s\": %d sets of %d, so the "
-                                 "quantity is %d sets and not %d pieces"
-                                 % (match.group(0), outer, pack, outer,
-                                    outer * pack),
-                        field="quantity",
-                        old_value=old,
-                        new_value=outer,
-                        item_index=item_index,
-                        input_index=origins[item_index])))
-                    break
-        # Findings come in source order of the set line that corrected them.
-        block_findings.sort(key=lambda row: (row[0], row[1]))
-        findings.extend(row[2] for row in block_findings)
+                if _quantity_of(item) != product:
+                    continue
+                old = item.get("quantity")
+                old_unit = item.get("unit")
+                item["quantity"] = outer
+                item["unit"] = "set"
+                item["uncertain"] = True
+                corrected.add(item_index)
+                findings.append(_finding(
+                    "SET_MULTIPLIED", "corrected",
+                    evidence="source says \"%s\": %d sets of %d, so the "
+                             "quantity is %d sets and not %d pieces; "
+                             "unit \"%s\" -> \"set\""
+                             % (match.group(0), outer, pack, outer, product,
+                                old_unit if isinstance(old_unit, str)
+                                and old_unit.strip() else "piece"),
+                    field="quantity",
+                    old_value=old,
+                    new_value=outer,
+                    item_index=item_index,
+                    input_index=origins[item_index]))
     return findings
 
 
@@ -1527,20 +1531,46 @@ def _source_lines(text):
     return bodies, starts
 
 
-def _set_block_window(has_set, index):
-    """Return the line indexes a set line on line index may correct from.
+def _set_owner_lines(by_line, grounded, has_set, line_count):
+    """Return {set-line index: owner-line index} for the set check.
 
-    A block is a run of consecutive lines that each carry a set line: a
-    supplier writes one order's set lines together, and the item line follows
-    the block. The window is the block plus one line on each side.
+    A set line belongs to the items grounded on its own line. When its own line
+    grounds no item, it belongs to the line directly above it; when that line
+    grounds none either, to the line directly below. A stack of set lines whose
+    own lines ground nothing shares one owner line, taken from the line above
+    the stack or, failing that, the line below it: a supplier writes one
+    position's set lines together, so the stack is one position.
+
+    A line that grounds no item at all is never an owner, so a set line next to
+    nothing is dropped instead of reaching across the mail.
     """
-    first = index
-    while first - 1 >= 0 and has_set[first - 1]:
-        first -= 1
-    last = index
-    while last + 1 < len(has_set) and has_set[last + 1]:
-        last += 1
-    return range(max(0, first - 1), min(len(has_set) - 1, last + 1) + 1)
+    owner = {}
+    for line_index in by_line:
+        for candidate in (line_index, line_index - 1, line_index + 1):
+            if 0 <= candidate < line_count and grounded[candidate]:
+                owner[line_index] = candidate
+                break
+    for first, last in _set_blocks(has_set):
+        block = [index for index in range(first, last + 1) if index in by_line]
+        if not block:
+            continue
+        # A set line of the block that found an owner of its own already
+        # belongs to that item. The others share the block's neighbour.
+        shared = None
+        for index in block:
+            if index in owner:
+                shared = owner[index]
+                break
+        if shared is None:
+            for candidate in (first - 1, last + 1):
+                if 0 <= candidate < line_count and grounded[candidate]:
+                    shared = candidate
+                    break
+        if shared is None:
+            continue
+        for index in block:
+            owner.setdefault(index, shared)
+    return owner
 
 
 def _set_blocks(has_set):

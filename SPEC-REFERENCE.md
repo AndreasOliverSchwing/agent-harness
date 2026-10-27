@@ -262,29 +262,44 @@ ignored, and a value above `10**9` is not a quantity. `10**400` raises
 `SET_MULTIPLIED` rewrites a quantity only when the set line belongs to that item.
 Two conditions must hold, and both must hold on one line:
 
-1. **The item is grounded on a line of the set block.** A block is a run of
-   consecutive lines that each carry a set line. The window is that block plus
-   one line on each side. A line grounds the item when the part number occurs on
-   it on a token boundary, when its GTIN is on it, when the item's link is on
-   it, or when it shares at least `MATCH_RATIO` of the item's description words.
-2. **A pack marker that names the same pack size sits on that line.** The marker
-   must sit on the line that grounds the item, not anywhere in the mail.
+1. **The item belongs to the set line.** A set line belongs to the items
+   grounded on its own line. When its own line grounds no item, it belongs to
+   the line directly above it; when that line grounds none either, to the line
+   directly below it. A stack of set lines whose own lines ground nothing
+   shares one owner line: the line above the stack, else the line below it,
+   because a supplier writes one position's set lines together. Only an item
+   the extractor produced and that states a quantity can own a set line, so a
+   placeholder this module appended never takes one.
+   A line grounds an item when the part number occurs on it on a token
+   boundary, when its GTIN is on it, when the item's link is on it, or when it
+   shares at least `MATCH_RATIO` of the item's description words.
+2. **A pack marker that names the same pack size sits on the set line or on the
+   owner line.** The marker must sit on one of those two lines, not anywhere in
+   the mail.
 
 A pack marker on another product's line is another product's pack. It proves
 nothing about this item, so the item keeps its quantity and gets no finding. A
 missed correction is safer than a wrong one.
 
-    AC-44170 Schraube 8 Stück
+    AC-44170 Schraube 2er-Pack, 8 Stück
     NW-22010 Kabelbinder 2er-Pack, Menge: 4 x 2
 
-Item `AC-44170` stays at 8 pieces. The `2er-Pack` and the set line belong to
-`NW-22010`, which is already 4 sets.
+Item `AC-44170` stays at 8 pieces. The set line sits on the `NW-22010` line, so
+it belongs to `NW-22010`, which is already 4 sets.
+
+    NW-22010 Kabelbinder 2er-Pack
+    Menge: 3 x 2
+    AC-44170 Schraube M8, 6 Packungen à 2er-Pack
+
+Item `AC-44170` stays at 6 pieces. The set line belongs to the line directly
+above it, so the screws two lines below it are never corrected.
 
     AC-44170 2-pack
     Menge: 4 x 2
 
 Item `AC-44170` with quantity 8 becomes 4 sets: the part number and the pack
-marker sit on one line, and the set line is next to it.
+marker sit on one line, and the set line is next to it. The finding's evidence
+names the unit change: `unit "piece" -> "set"`.
 
 An item is corrected at most once, and the pack size always comes from the
 source text. The forms `5 pack`, `5-pack`, `5er-Pack` and `5er Pack` all name

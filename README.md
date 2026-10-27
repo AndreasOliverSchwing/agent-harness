@@ -199,7 +199,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries. The line must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode`), and a digit run inside a link never counts | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); otherwise leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
-| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item is grounded on the set line or on the line next to it, and the marker sits on that same line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item; the evidence names the unit change |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; reports `merged` |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
@@ -306,9 +306,10 @@ name", not as a recall rate on real extractor output.
   is capped: a number above `10**9` or a digit run longer than 12 is ignored, so
   `10**400` and a 5,000-digit run produce no quantity instead of an exception.
 - `SET_MULTIPLIED` needs a pack marker of the same size in the source text, on
-  the line that grounds the item. A set line and its item must be neighbours: a
-  set line whose item line sits further away corrects nothing. A pack word only
-  in the extractor's description is never enough.
+  the set line or on the item's own line. A set line belongs to one item: the
+  item on its own line, else the one on the line directly above, else the one on
+  the line directly below. A set line whose item sits further away corrects
+  nothing. A pack word only in the extractor's description is never enough.
 - The checks are mechanical pattern matches. They are deterministic on purpose: a
   grounding check that needs a model fails exactly when the extraction is least
   trustworthy.
