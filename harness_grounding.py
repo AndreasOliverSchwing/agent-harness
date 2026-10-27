@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """harness_grounding — tie an LLM extraction back to the text it came from.
 
 No LLM. No network. Standard library only, Python >= 3.8. The checker is

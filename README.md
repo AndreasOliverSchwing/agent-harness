@@ -130,7 +130,7 @@ input, never calls a model, never opens a socket.
 import harness_grounding as g
 
 source = """Example Tool Supply - order request
-Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 4006381333931
+Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 2000000000008
 quantity: 3 x 4
 """
 
@@ -150,7 +150,7 @@ for finding in findings:
 That extraction is well-formed and wrong in three ways. It prints
 `UNGROUNDED_ID flagged part_number AC-9999 -> None`,
 `SET_MULTIPLIED corrected quantity 12 -> 3` and
-`MISSING_GTIN attached gtin None -> 4006381333931`. The full runnable version is
+`MISSING_GTIN attached gtin None -> 2000000000008`. The full runnable version is
 `python3 examples/grounding_example.py`.
 
 `ground()` raises `TypeError` when `extraction` is not a dict, when
@@ -275,7 +275,7 @@ name", not as a recall rate on real extractor output.
   do not count (`part`, `item`, `quantity`, `GTIN`, …). A short or generic
   description ("Set", "Artikel") can miss, and the finding then carries no item.
 - **A GTIN is one number space.** GTIN-8, -12, -13 and -14 are compared as the
-  GTIN-14 (zero-padded) form, so `036000291452` and `0036000291452` are the same
+  GTIN-14 (zero-padded) form, so `200000000004` and `0200000000004` are the same
   GTIN: it is grounded, and it is not attached twice. A number an item already
   carries in `gtin`, `part_number` or `other_ids` (with or without an `EAN:`
   label) is never attached again. `gtin14()` exposes the padded form.

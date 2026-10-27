@@ -95,6 +95,23 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   compound (8 → 4 → 2). The pack size comes from the source text only; a pack
   word in the extractor's description is no longer accepted as evidence. `5
   pack` is now recognised alongside `5-pack`, `5er-Pack` and `5er Pack`.
+- `SET_MULTIPLIED` corrects only the item the set line belongs to. The item
+  must be grounded on a line of the set block (the set line, or the line
+  directly before or after the block) by its part number, GTIN, link,
+  marketplace id or description words, and the pack marker must sit on that
+  same line. Another product's "2er-Pack" no longer rewrites a correct
+  quantity of 8, and a set line whose item line sits further away corrects
+  nothing.
+- The docs no longer claim more than the code does. The module docstring said
+  the module "never deletes an item" and "only adds a flag, attaches a value
+  the source proves, or reports a fact": three checks remove, correct or
+  restore one. The `_check_ids` docstring carried internal wording ("in this
+  card"). `examples/grounding_example.py` and `tests/test_grounding.py` called
+  their GTINs invented while quoting the public Wikipedia EAN-13, EAN-8 and
+  UPC-A examples, one of which sits on a real GS1 prefix. Those numbers are now
+  GTINs with the GS1 prefix 2, which is reserved for internal use, so no real
+  product carries them, and both files say so. `harness_grounding.py` lost its
+  shebang: it is a library and never had a `main()`.
 - Quantities are read as counts of whole pieces, so a German thousands group is
   no longer read as a fraction: `1.000 Stück` and `1,000 x` are 1000, not 1. A
   separator with three digits behind it groups; one, two, four or more digits

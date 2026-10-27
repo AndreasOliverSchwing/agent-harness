@@ -2,10 +2,11 @@
 
 Every fixture here is invented: "Acme Tools" and "Northwind Supply" are made-up
 suppliers, and every GTIN passes or fails the GS1 check digit by construction.
-No real customer text, no real product data. The marketplace ids are invented
-too, and they are chosen so that they are not valid GTINs: a 12-digit item
-number with a valid check digit would be picked up as a GTIN and would blur the
-check under test.
+No real customer text, no real product data. The GTINs use the GS1 prefix 2,
+which is reserved for internal use, so no real product carries them. The
+marketplace ids are invented too, and they are chosen so that they are not
+valid GTINs: a 12-digit item number with a valid check digit would be picked up
+as a GTIN and would blur the check under test.
 
 The tests are split by contract, not by function name:
   - the check-digit rule, on all four GS1 lengths;
@@ -40,13 +41,13 @@ Acme Tools - order confirmation
 # Two GTINs, each on a line whose words match one item description.
 GTIN_SOURCE = """\
 Northwind Supply - order confirmation
-4 x Hex bolt M8 stainless steel  GTIN 4006381333931
-2 x Garden hose 20 m  GTIN 96385074
+4 x Hex bolt M8 stainless steel  GTIN 2000000000008
+2 x Garden hose 20 m  GTIN 20000004
 """
 
 ONE_GTIN_SOURCE = """\
 Northwind Supply - order confirmation
-4 x Widget assembly  GTIN 4006381333931
+4 x Widget assembly  GTIN 2000000000008
 """
 
 # Invented marketplace links. The eBay and AliExpress ids are 12 and 13 digits
@@ -79,7 +80,7 @@ Acme Tools - order confirmation
 4x https://www.amazon.de/dp/B0TEST1234
 quantity: 28 x 5
 Hex bolt set, 5-pack, part AC-4417
-Washer 12 mm  GTIN 4006381333931
+Washer 12 mm  GTIN 2000000000008
 %s
 """ % ALIEXPRESS_LINK
 
@@ -101,20 +102,20 @@ class GtinCheckDigitTest(unittest.TestCase):
     """The GS1 rule, on every length the module claims to support."""
 
     def test_gtin13_valid(self):
-        self.assertTrue(G.gtin_valid("4006381333931"))
+        self.assertTrue(G.gtin_valid("2000000000008"))
 
     def test_gtin13_invalid_check_digit(self):
         # Same body, last digit off by one.
         self.assertFalse(G.gtin_valid("4006381333932"))
 
     def test_gtin8_valid(self):
-        self.assertTrue(G.gtin_valid("96385074"))
+        self.assertTrue(G.gtin_valid("20000004"))
 
     def test_gtin8_invalid_check_digit(self):
         self.assertFalse(G.gtin_valid("96385075"))
 
     def test_gtin12_valid(self):
-        self.assertTrue(G.gtin_valid("036000291452"))
+        self.assertTrue(G.gtin_valid("200000000004"))
 
     def test_gtin12_invalid_check_digit(self):
         self.assertFalse(G.gtin_valid("036000291453"))
@@ -138,21 +139,21 @@ class GtinCheckDigitTest(unittest.TestCase):
 
     def test_gtin_rejects_non_digits_and_non_strings(self):
         self.assertFalse(G.gtin_valid("40063813339a1"))
-        self.assertFalse(G.gtin_valid("4006381333931x"))
-        self.assertFalse(G.gtin_valid(4006381333931))
+        self.assertFalse(G.gtin_valid("2000000000008x"))
+        self.assertFalse(G.gtin_valid(2000000000008))
         self.assertFalse(G.gtin_valid(None))
 
     def test_gtin_ignores_surrounding_whitespace(self):
         # A value copied out of a table often carries a space. Strip, do not fail.
-        self.assertTrue(G.gtin_valid(" 4006381333931\n"))
+        self.assertTrue(G.gtin_valid(" 2000000000008\n"))
 
 
 class FindGtinsTest(unittest.TestCase):
     """find_gtins must return only standalone valid GTINs, in order, unique."""
 
     def test_find_gtins_in_order_without_repeats(self):
-        text = "Acme Tools: 96385074, then 4006381333931, and 96385074 again."
-        self.assertEqual(G.find_gtins(text), ["96385074", "4006381333931"])
+        text = "Acme Tools: 20000004, then 2000000000008, and 20000004 again."
+        self.assertEqual(G.find_gtins(text), ["20000004", "2000000000008"])
 
     def test_find_gtins_skips_invalid_check_digit(self):
         self.assertEqual(G.find_gtins("96385075 4006381333932"), [])
@@ -162,8 +163,8 @@ class FindGtinsTest(unittest.TestCase):
         # A longer number must never be trimmed down into a shorter one.
         # Built from short literals so the channel-id scan stays quiet.
         nine = "12345678" + "9"
-        fifteen = "94006381333931" + "1"
-        seventeen = "4006381333931" + "9999"
+        fifteen = "92000000000008" + "1"
+        seventeen = "2000000000008" + "9999"
         text = " ".join([nine, fifteen, seventeen])
         self.assertEqual(G.find_gtins(text), [])
 
@@ -173,9 +174,9 @@ class FindGtinsTest(unittest.TestCase):
         self.assertEqual(G.find_gtins(None), [])
 
     def test_find_gtins_multiple_lengths(self):
-        text = "96385074 036000291452 4006381333931 10012345678902"
+        text = "20000004 200000000004 2000000000008 10012345678902"
         self.assertEqual(G.find_gtins(text),
-                         ["96385074", "036000291452", "4006381333931",
+                         ["20000004", "200000000004", "2000000000008",
                           "10012345678902"])
 
 
@@ -213,11 +214,11 @@ class GroundIdentifierTest(unittest.TestCase):
 
     def test_ground_flags_ungrounded_gtin(self):
         extraction = {"items": [{"description": "Hex bolt M8",
-                                 "gtin": "96385074"}]}
+                                 "gtin": "20000004"}]}
         checked, findings = G.ground(extraction, ID_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
         self.assertEqual(findings[0]["field"], "gtin")
-        self.assertEqual(findings[0]["old_value"], "96385074")
+        self.assertEqual(findings[0]["old_value"], "20000004")
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_ground_leaves_grounded_id_alone(self):
@@ -315,8 +316,8 @@ class GroundMissingGtinTest(unittest.TestCase):
         ]}
         checked, findings = G.ground(extraction, GTIN_SOURCE)
         self.assertEqual([f["action"] for f in findings], ["attached", "attached"])
-        self.assertEqual(checked["items"][0]["gtin"], "4006381333931")
-        self.assertEqual(checked["items"][1]["gtin"], "96385074")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
+        self.assertEqual(checked["items"][1]["gtin"], "20000004")
         self.assertTrue(checked["items"][0]["uncertain"])
         self.assertTrue(checked["items"][1]["uncertain"])
 
@@ -327,7 +328,7 @@ class GroundMissingGtinTest(unittest.TestCase):
         checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(findings[0]["action"], "attached")
         self.assertEqual(findings[0]["item_index"], 0)
-        self.assertEqual(checked["items"][0]["gtin"], "4006381333931")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_ground_reports_when_nothing_matches(self):
@@ -347,7 +348,7 @@ class GroundMissingGtinTest(unittest.TestCase):
         # finding is about is named in evidence.
         self.assertIsNone(finding["old_value"])
         self.assertIsNone(finding["new_value"])
-        self.assertIn("4006381333931", finding["evidence"])
+        self.assertIn("2000000000008", finding["evidence"])
         # Nothing was attached to either item.
         self.assertNotIn("gtin", checked["items"][0])
         self.assertNotIn("gtin", checked["items"][1])
@@ -362,21 +363,21 @@ class GroundMissingGtinTest(unittest.TestCase):
 
     def test_ground_appends_to_other_ids_when_gtin_taken(self):
         source = ("Northwind Supply\n"
-                  "4 x Hex bolt M8  GTIN 4006381333931 and 96385074\n")
+                  "4 x Hex bolt M8  GTIN 2000000000008 and 20000004\n")
         extraction = {"items": [{"description": "Hex bolt M8",
-                                 "gtin": "96385074"}]}
+                                 "gtin": "20000004"}]}
         checked, findings = G.ground(extraction, source)
         self.assertEqual([f["action"] for f in findings], ["attached"])
-        self.assertEqual(checked["items"][0]["gtin"], "96385074")
-        self.assertEqual(checked["items"][0]["other_ids"], ["4006381333931"])
+        self.assertEqual(checked["items"][0]["gtin"], "20000004")
+        self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_ground_skips_gtin_already_in_other_ids(self):
         extraction = {"items": [{"description": "Widget assembly",
-                                 "other_ids": ["4006381333931"]}]}
+                                 "other_ids": ["2000000000008"]}]}
         checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
         self.assertEqual(findings, [])
-        self.assertEqual(checked["items"][0]["other_ids"], ["4006381333931"])
+        self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
 
 
 class GtinKeywordRuleTest(unittest.TestCase):
@@ -431,7 +432,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         # overlap on that word alone must not decide where the GTIN goes: the
         # line names no product, so the GTIN is reported, not attached.
         source = ("Acme Tools\n4 x Spare part bracket\n"
-                  "GTIN 4006381333931, part of set\n")
+                  "GTIN 2000000000008, part of set\n")
         extraction = {"items": [
             {"description": "Spare part bracket"},
             {"description": "Replacement part kit"},
@@ -443,7 +444,7 @@ class GtinKeywordRuleTest(unittest.TestCase):
         self.assertEqual(finding["action"], "reported")
         self.assertIsNone(finding["item_index"])
         self.assertIsNone(finding["new_value"])
-        self.assertIn("4006381333931", finding["evidence"])
+        self.assertIn("2000000000008", finding["evidence"])
         self.assertNotIn("gtin", checked["items"][0])
         self.assertNotIn("gtin", checked["items"][1])
 
@@ -452,31 +453,31 @@ class GtinLeadingZerosTest(unittest.TestCase):
     """A GTIN is one number space, not four (QA 7).
 
     GTIN-8, -12, -13 and -14 are the same number with different leading zeros.
-    The source may hold "036000291452" where the extractor wrote
-    "0036000291452". That is the same GTIN: it is grounded, and it is not
+    The source may hold "200000000004" where the extractor wrote
+    "0200000000004". That is the same GTIN: it is grounded, and it is not
     attached a second time under the other spelling.
     """
 
-    SOURCE = "Acme Tools\n4 x Widget assembly  EAN 036000291452\n"
+    SOURCE = "Acme Tools\n4 x Widget assembly  EAN 200000000004\n"
 
     def test_ground_grounds_a_gtin_written_without_its_leading_zero(self):
         extraction = {"items": [{"description": "Widget assembly",
-                                 "gtin": "0036000291452"}]}
+                                 "gtin": "0200000000004"}]}
         checked, findings = G.ground(extraction, self.SOURCE)
         self.assertEqual(findings, [])
-        self.assertEqual(checked["items"][0]["gtin"], "0036000291452")
+        self.assertEqual(checked["items"][0]["gtin"], "0200000000004")
         self.assertNotIn("uncertain", checked["items"][0])
 
     def test_ground_grounds_a_gtin14_of_a_gtin12_in_the_source(self):
         extraction = {"items": [{"description": "Widget assembly",
-                                 "gtin": "00036000291452"}]}
+                                 "gtin": "00200000000004"}]}
         checked, findings = G.ground(extraction, self.SOURCE)
         self.assertEqual(findings, [])
-        self.assertEqual(checked["items"][0]["gtin"], "00036000291452")
+        self.assertEqual(checked["items"][0]["gtin"], "00200000000004")
 
     def test_ground_does_not_attach_a_gtin_that_part_number_carries(self):
         extraction = {"items": [{"description": "Widget assembly",
-                                 "part_number": "036000291452"}]}
+                                 "part_number": "200000000004"}]}
         checked, findings = G.ground(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertNotIn("gtin", checked["items"][0])
@@ -484,11 +485,11 @@ class GtinLeadingZerosTest(unittest.TestCase):
     def test_ground_does_not_attach_a_gtin_that_other_ids_carries(self):
         # The label names the number; it is not part of it.
         extraction = {"items": [{"description": "Widget assembly",
-                                 "other_ids": ["EAN:0036000291452"]}]}
+                                 "other_ids": ["EAN:0200000000004"]}]}
         checked, findings = G.ground(extraction, self.SOURCE)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["other_ids"],
-                         ["EAN:0036000291452"])
+                         ["EAN:0200000000004"])
         self.assertNotIn("gtin", checked["items"][0])
 
 
@@ -792,7 +793,7 @@ class IdentifierRegexCostTest(unittest.TestCase):
         source = "Acme Tools\n" + "1" * self.LENGTH
         extraction = {"items": [{"description": "Widget",
                                  "part_number": "AC-441",
-                                 "gtin": "96385074"}]}
+                                 "gtin": "20000004"}]}
         started = time.perf_counter()
         G.ground(extraction, source)
         elapsed = time.perf_counter() - started
@@ -1180,20 +1181,20 @@ class GroundVariantSplitTest(unittest.TestCase):
     def test_merge_moves_link_gtin_and_other_ids_to_the_survivor(self):
         # The variant line is the only place these values occur. A merge that
         # drops them loses data the extractor found.
-        source = ("Acme Tools\npart AC-4417\nGTIN 4006381333931\n%s\n"
+        source = ("Acme Tools\npart AC-4417\nGTIN 2000000000008\n%s\n"
                   % AMAZON_LINK)
         extraction = {"items": [
             {"description": "Hex bolt set", "part_number": "AC-4417",
              "quantity": 4},
             {"description": "Hex bolt set zinc", "part_number": "AC-4417",
-             "link": AMAZON_LINK, "gtin": "4006381333931",
+             "link": AMAZON_LINK, "gtin": "2000000000008",
              "other_ids": ["SUP-77"]},
         ]}
         checked, findings = G.ground(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
         item = checked["items"][0]
         self.assertEqual(item["link"], AMAZON_LINK)
-        self.assertEqual(item["gtin"], "4006381333931")
+        self.assertEqual(item["gtin"], "2000000000008")
         self.assertEqual(item["other_ids"], ["SUP-77"])
         self.assertTrue(item["uncertain"])
 
@@ -1219,17 +1220,17 @@ class GroundVariantSplitTest(unittest.TestCase):
     def test_merge_keeps_gtin_conflict_in_the_finding(self):
         extraction = {"items": [
             {"description": "Hex bolt set", "part_number": "AC-4417",
-             "quantity": 4, "gtin": "4006381333931"},
+             "quantity": 4, "gtin": "2000000000008"},
             {"description": "Hex bolt set zinc", "part_number": "AC-4417",
-             "gtin": "96385074"},
+             "gtin": "20000004"},
         ]}
-        source = "Acme Tools\npart AC-4417\nGTIN 4006381333931 96385074\n"
+        source = "Acme Tools\npart AC-4417\nGTIN 2000000000008 20000004\n"
         checked, findings = G.ground(extraction, source)
-        self.assertEqual(checked["items"][0]["gtin"], "4006381333931")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
         conflicts = [f for f in findings
                      if f["code"] == "VARIANT_SPLIT" and f["field"] == "gtin"]
         self.assertEqual(len(conflicts), 1)
-        self.assertEqual(conflicts[0]["old_value"], "96385074")
+        self.assertEqual(conflicts[0]["old_value"], "20000004")
 
     def test_variant_notes_keep_input_order(self):
         # The supplier lists plain, zinc, brass. The note must read the same

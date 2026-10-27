@@ -9,7 +9,8 @@ The extractor output below is well-formed: every field has the right type, the
 quantity is a number and the part number looks like a part number. It is still
 wrong in three ways. ground() finds all three and reports what it did.
 
-Every name, part number and GTIN here is invented.
+Every name, part number and GTIN here is invented. The GTIN uses the GS1
+prefix 2, which is reserved for internal use, so no real product carries it.
 """
 import json
 import os
@@ -20,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import harness_grounding as g
 
 SOURCE = """Example Tool Supply - order request
-Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 4006381333931
+Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 2000000000008
 quantity: 3 x 4
 """
 
