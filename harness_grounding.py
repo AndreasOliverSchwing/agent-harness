@@ -42,7 +42,10 @@ finding = {
 
 A quantity is read as a count of whole pieces: a separator with exactly three
 digits behind it groups thousands ("1.000" and "1,000" are 1000) and one, two,
-four or more digits are a fraction ("1,5" is 1.5). A value above 10**9 or a
+four or more digits are a fraction ("1,5" is 1.5). A repeated separator groups
+only when the first group has 1 to 3 digits and every later group has exactly 3
+("1.000.000"); anything else is not a number, so a date such as "26.10.2026" is
+never a quantity. A value above 10**9 or a
 digit run longer than 12 is not a quantity, so untrusted text cannot raise.
 ground() raises TypeError when extraction is not a dict, when extraction["items"]
 is not a list, when source_text is not a str, or when apply is not a bool.
@@ -1849,7 +1852,10 @@ def _number_from_text(text):
         return None
     negative = text.startswith("-")
     text = text.lstrip("+-")
-    whole, fraction = _split_quantity_text(text)
+    split = _split_quantity_text(text)
+    if split is None:
+        return None
+    whole, fraction = split
     if not _is_ascii_digits(whole or "0"):
         return None
     if fraction is not None and not _is_ascii_digits(fraction):
@@ -1877,7 +1883,11 @@ def _split_quantity_text(text):
     - when both characters occur, the last one is the decimal separator, so
       "1.234,56" and "1,234.56" are both 1234.56.
 
-    A repeated separator always groups: "1.000.000".
+    A repeated separator groups thousands only when the first group has 1 to 3
+    digits and every later group has exactly 3: "1.000.000". Anything else is
+    not a number, so None is returned and a date such as "26.10.2026" is never
+    read as a quantity. A first group of "0" never groups thousands, so
+    "0,250" is 0.25 and not 250.
     """
     has_dot = "." in text
     has_comma = "," in text
@@ -1891,11 +1901,25 @@ def _split_quantity_text(text):
     separator = "." if has_dot else ","
     parts = text.split(separator)
     if len(parts) > 2:
-        return "".join(parts), None
+        if _groups_thousands(parts):
+            return "".join(parts), None
+        return None
     head, tail = parts
-    if len(tail) == 3:
+    if len(tail) == 3 and head != "0":
         return head + tail, None
     return head, tail
+
+
+def _groups_thousands(parts):
+    """True when parts is a thousands grouping of digits.
+
+    The first group has 1 to 3 digits and is not "0"; every later group has
+    exactly 3. Anything else is not a grouped number.
+    """
+    first = parts[0]
+    if not 1 <= len(first) <= 3 or first == "0":
+        return False
+    return all(len(group) == 3 for group in parts[1:])
 
 
 def _quantity_of(item):

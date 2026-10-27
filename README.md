@@ -375,6 +375,10 @@ name", not as a recall rate on real extractor output.
   decides its meaning, so no locale is needed: three digits group thousands
   (`1.000 Stück` and `1,000 x` are both 1000, `1.000.000` is one million), and
   one, two, four or more digits are a fraction (`1,5` is 1.5, `12,50` is 12.5).
+  A repeated separator groups only when the first group has 1 to 3 digits and
+  every later group has exactly 3, so `26.10.2026` and `1.5.2026` are not
+  numbers and a delivery date on its own line is never a quantity. A first
+  group of `0` never groups thousands: `0,250` is 0.25, not 250.
   When both `.` and `,` occur, the last one is the decimal separator
   (`1.234,56` and `1,234.56` are both 1234.56). A price is never a quantity: a
   line with a currency sign (`12,50 €`, `EUR 12,50`, `Preis 12,50`) gives no

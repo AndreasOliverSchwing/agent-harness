@@ -2490,6 +2490,50 @@ class QuantityFormatTest(unittest.TestCase):
         self.assertIsNone(G._to_number("9" * 13))
 
 
+class DateIsNotAQuantityTest(unittest.TestCase):
+    """A date on its own line is never a quantity (B2').
+
+    `_split_quantity_text` joined any repeated separator, so "26.10.2026" read
+    as 26102026 and a delivery date alone on a line became an order of 26
+    million pieces. A repeated separator groups thousands only when the first
+    group has 1 to 3 digits and every later group has exactly 3; anything else
+    is not a number.
+    """
+
+    A = "https://www.amazon.de/dp/B0TESTAAA1"
+
+    def _assert_no_quantity(self, source):
+        # Default mode: nothing is written, so no quantity is suggested.
+        checked, findings = G.ground({"items": []}, source)
+        self.assertIsNone(checked["items"][0].get("quantity"))
+        self.assertEqual(
+            [finding for finding in findings if finding["field"] == "quantity"],
+            [])
+        # apply=True: the value written is None.
+        checked, findings = ground_write({"items": []}, source)
+        self.assertIsNone(checked["items"][0].get("quantity"))
+
+    def test_a_delivery_date_above_a_link_is_not_a_quantity(self):
+        self._assert_no_quantity("Liefertermin:\n26.10.2026\n%s\n" % self.A)
+
+    def test_a_delivery_date_below_a_link_is_not_a_quantity(self):
+        self._assert_no_quantity(
+            "Bitte zus\u00e4tzlich bestellen:\n%s\n26.10.2026\n" % self.A)
+
+    def test_a_date_is_not_a_number(self):
+        for text in ("26.10.2026", "1.5.2026", "13.11.2026"):
+            self.assertIsNone(G._to_number(text), text)
+
+    def test_a_real_grouped_number_keeps_its_value(self):
+        cases = [("1.000.000", 1000000), ("1.000", 1000), ("1,5", 1.5),
+                 ("12,50", 12.5), ("1.234,56", 1234.56)]
+        for text, expected in cases:
+            self.assertEqual(G._to_number(text), expected, text)
+
+    def test_a_leading_zero_never_groups_thousands(self):
+        self.assertEqual(G._to_number("0,250"), 0.25)
+
+
 class GroundInputTypeTest(unittest.TestCase):
     """QA 13: a wrong input type is a caller bug, not an empty clean result."""
 

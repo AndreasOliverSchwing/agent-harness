@@ -316,16 +316,25 @@ makes a separator unambiguous without knowing the locale:
 |---|---|---|
 | `1.000 Stück` | 3 | 1000 |
 | `1,000 x` | 3 | 1000 |
-| `1.000.000` | repeated | 1000000 |
+| `1.000.000` | repeated, groups of 3 | 1000000 |
 | `1,5` | 1 | 1.5 |
 | `12,50` | 2 | 12.5 |
 | `1.234,56` | both, `,` last | 1234.56 |
 | `1,234.56` | both, `.` last | 1234.56 |
+| `0,250` | 3, but the first group is `0` | 0.25 |
+| `26.10.2026` | repeated, later group of 2 | none |
+| `1.5.2026` | repeated, later group of 1 | none |
 
 Three digits behind a separator group thousands. One, two, four or more digits
 are a fraction. When both `.` and `,` occur, the last one is the decimal
 separator. `"2 pcs"` and `Decimal("2")` are quantities, so a variant line that
 carries one is a second position and `VARIANT_SPLIT` keeps it.
+
+A repeated separator groups thousands only when the first group has 1 to 3
+digits and every later group has exactly 3. Anything else is not a number, so a
+delivery date on a line of its own (`26.10.2026`, `1.5.2026`, `13.11.2026`) is
+never read as a quantity. A first group of `0` never groups thousands, so
+`0,250` is 0.25 and not 250.
 
 The unit words are `x`, `×`, `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`,
 `Stück`, `Stueck`, `VE`, `Paar`, `Pack`, `kg`, `units` and `sets`. One list

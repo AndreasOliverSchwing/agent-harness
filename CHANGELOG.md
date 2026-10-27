@@ -183,6 +183,16 @@ below is one card of that round.
   only at a length an indexed id actually has, because a form of any other
   length cannot match. The same input takes 0.09 s and 19 MB. The existing
   set-check tests stay green; documented in `SPEC-REFERENCE.md` and `README.md`.
+- **A date is never a quantity (B2′).** `_split_quantity_text` joined any
+  repeated separator, so `26.10.2026` read as 26102026 and a delivery date alone
+  on a line above or below a link became an order of 26 million pieces;
+  `_to_number("1.5.2026")` read as 152026. A repeated separator now groups
+  thousands only when the first group has 1 to 3 digits and every later group
+  has exactly 3; anything else is not a number and `_to_number` returns `None`.
+  A first group of `0` never groups thousands, so `0,250` is 0.25 and not 250.
+  `1.000`, `1.000.000`, `1,5`, `12,50`, `1.234,56` and `1,234.56` keep their
+  values. Documented in `SPEC-REFERENCE.md`, `README.md` and the module
+  docstring.
 
 ### Fixed in the second review round
 
