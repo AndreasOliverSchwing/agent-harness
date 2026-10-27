@@ -176,6 +176,13 @@ below is one card of that round.
   `product_link_id()` returns `None` for it. The same two mails now take 0.03 s
   and 2 MB, and 0.11 s and 7 MB. Documented in `SPEC-REFERENCE.md`, `README.md`
   and the `product_link_id()` docstring.
+- **The line-form scan yields a form instead of holding a set (N5′).**
+  `_line_id_forms` put every form up to the longest indexed id into a set, so a
+  100 KB line of one-letter tokens beside a 64-character part number built
+  millions of forms: 1.86 s and 568 MB. It now yields each form and builds it
+  only at a length an indexed id actually has, because a form of any other
+  length cannot match. The same input takes 0.09 s and 19 MB. The existing
+  set-check tests stay green; documented in `SPEC-REFERENCE.md` and `README.md`.
 
 ### Fixed in the second review round
 

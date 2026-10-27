@@ -320,11 +320,12 @@ name", not as a recall rate on real extractor output.
   in under a second. Timing tests in the suite hold those bounds, and each
   timing test is proven by reverting the guard it covers.
 - **The set check does not use an id longer than 64 characters for line
-  matching.** It builds every form a line could hold, bounded by the longest id
-  in the extraction, so one absurd id would make every token on a line build a
-  form as long as that id. A part number of 65 characters or more is not a part
-  number: it grounds nothing on a line, so a set line next to it corrects
-  nothing. `UNGROUNDED_ID` still reads it.
+  matching.** A part number of 65 characters or more is not a part number: it
+  grounds nothing on a line, so a set line next to it corrects nothing.
+  `UNGROUNDED_ID` still reads it. The line-form scan also builds a form only at
+  a length an indexed id has, and yields it instead of holding a set, so a long
+  line of short tokens costs no memory: 100 KB of one-letter tokens beside a
+  64-character part number took 1.86 s and 568 MB, and takes 0.09 s and 19 MB.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - **An id is grounded on a token boundary, not as a substring.** A source that

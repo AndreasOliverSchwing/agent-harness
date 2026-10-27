@@ -391,12 +391,15 @@ Two conditions must hold, and both must hold on one line:
    2er-Pack` through the shared word "Pack". The pack words (`pack`, `packs`,
    `packung`, `packungen`, `set`, `sets`, `satz`) are generic and never count
    as a description match.
-   An id longer than 64 characters is not used for line matching. The check
-   builds every form a line could hold, bounded by the longest id in the
-   extraction, so one absurd id would make every token on a line build a form
-   as long as that id. A part number of 65 characters or more is not a part
-   number: it does not ground a line, so the set line it sits on owns no item.
-   `UNGROUNDED_ID` still reads it, because that check does not build forms.
+   An id longer than 64 characters is not used for line matching. A part
+   number of 65 characters or more is not a part number: it does not ground a
+   line, so the set line it sits on owns no item. `UNGROUNDED_ID` still reads
+   it, because that check does not build forms.
+   The line-form scan builds a form only at a length an indexed id has, and it
+   yields the form instead of collecting the forms in a set. A form of another
+   length cannot match, so building it is wasted work: on a 100 KB line of
+   one-letter tokens beside a 64-character part number the old scan held
+   millions of forms, 1.86 s and 568 MB. The scan now takes 0.09 s and 19 MB.
 2. **A pack marker that names the same pack size sits on the set line or on the
    owner line.** The marker must sit on one of those two lines, not anywhere in
    the mail.

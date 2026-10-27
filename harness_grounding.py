@@ -197,13 +197,14 @@ GTIN_LENGTHS = (8, 12, 13, 14)
 # the supplier mails ever written, so flagging it would be noise.
 MIN_ID_LEN = 4
 
-# Longest id the set check uses for line matching. The check builds every form a
-# line could hold, bounded by the longest id in the mail, so one 1,000-character
-# part number made it build 1,000-character forms for every token on the line:
-# 352 MB and 1.3 s on a 6 KB mail. A part number longer than 64 characters is not
-# a part number, so it is not used for line matching. It is still grounded and
-# still flagged by UNGROUNDED_ID, which does not build forms. See
-# SPEC-REFERENCE.md, "A set line corrects only its own item".
+# Longest id the set check uses for line matching. A part number longer than 64
+# characters is not a part number, so it is not used for line matching: without
+# the cap one 1,000-character part number made the scan build 1,000-character
+# forms for every token on the line (352 MB and 1.3 s on a 6 KB mail). It is
+# still grounded and still flagged by UNGROUNDED_ID, which does not build forms.
+# The scan itself builds only a form whose length an indexed id has, and yields
+# it instead of holding a set, so a long line of short tokens is cheap (N5').
+# See SPEC-REFERENCE.md, "A set line corrects only its own item".
 MAX_LINE_ID_LEN = 64
 
 # A description word must be at least this long to count towards a match. Short
@@ -2146,39 +2147,41 @@ def _line_facts(bodies):
     return facts
 
 
-def _line_id_forms(fact, max_length):
-    """Return every id form the line holds on a token boundary.
+def _line_id_forms(fact, lengths):
+    """Yield every id form the line holds on a token boundary.
 
     A match must start and end on a token boundary, so a matchable form is a
     run of the line's letters and digits, or several runs in a row. A form may
     not run through punctuation that is not a documented joiner, for the same
     reason UNGROUNDED_ID refuses one: "AC-4417, 8" does not hold "AC-44178".
-    Only forms no longer than the longest indexed id are built, which bounds the
-    work on a line of many words, and that longest id is capped at
-    MAX_LINE_ID_LEN. Without the cap one 1,000-character part number made the
-    scan build 1,000-character forms for every token on the line.
+
+    Only a length an indexed id actually has is built, because a form of any
+    other length cannot match. Building every length up to the longest id made
+    a 100 KB line of one-letter tokens hold millions of forms: 1.86 s and
+    568 MB. The forms are yielded, not collected in a set, so the memory is one
+    form at a time, and the caller looks each one up in the id index. The
+    longest indexed id is still capped at MAX_LINE_ID_LEN by the caller.
     """
     flat = fact["flat"]
+    boundary = fact["boundary"]
     hard = fact["hard"]
-    stops = [position for position, flag in enumerate(fact["boundary"]) if flag]
-    runs = [(stops[index], stops[index + 1])
-            for index in range(len(stops) - 1)]
-    forms = set()
-    for first in range(len(runs)):
-        start, end = runs[first]
-        text = flat[start:end]
-        if len(text) > max_length:
-            continue
-        forms.add(text)
-        for second in range(first + 1, len(runs)):
-            text += flat[runs[second][0]:runs[second][1]]
-            if len(text) > max_length:
-                break
-            index = bisect_right(hard, start)
-            if index < len(hard) and hard[index] < runs[second][1]:
-                break
-            forms.add(text)
-    return forms
+    size = len(flat)
+    stops = [position for position, flag in enumerate(boundary) if flag]
+    if not stops or not lengths:
+        return
+    stop_flags = bytearray(size + 1)
+    for position in stops:
+        if position <= size:
+            stop_flags[position] = 1
+    for start in stops:
+        index = bisect_right(hard, start)
+        limit = hard[index] if index < len(hard) else size + 1
+        for length in lengths:
+            end = start + length
+            if end > size or end > limit:
+                continue
+            if stop_flags[end]:
+                yield flat[start:end]
 
 
 def _grounded_by_line(items, facts):
@@ -2203,9 +2206,10 @@ def _grounded_by_line(items, facts):
     enough to run on untrusted text.
 
     An id longer than MAX_LINE_ID_LEN is not indexed and does not ground a line.
-    The line-form scan is bounded by the longest indexed id, so one absurd id in
-    the extraction could otherwise make every token on a line build a form as
-    long as that id. The bound is documented in SPEC-REFERENCE.md.
+    The line-form scan builds only a form whose length an indexed id has, so one
+    absurd id in the extraction can neither make every token on a line build a
+    form as long as that id nor add a length no id could have. The bound is
+    documented in SPEC-REFERENCE.md.
     """
     ids = {}
     gtins = {}
@@ -2241,14 +2245,14 @@ def _grounded_by_line(items, facts):
         bucket = words_any if len(item_words[index]) <= 2 else words_check
         for word in item_words[index]:
             bucket.setdefault(word, set()).add(index)
-    max_length = min(max([len(form) for form in ids] or [0]), MAX_LINE_ID_LEN)
+    lengths = sorted(set(len(form) for form in ids))
     # Ids first, over the whole source: an item whose id occurs anywhere is
     # grounded by ids only.
     id_found = []
     id_grounded = set()
     for fact in facts:
         found = set()
-        for form in _line_id_forms(fact, max_length):
+        for form in _line_id_forms(fact, lengths):
             found.update(ids.get(form, ()))
         for form in fact["gtins14"]:
             found.update(gtins.get(form, ()))

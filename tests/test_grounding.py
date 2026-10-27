@@ -1388,6 +1388,66 @@ class MarketplaceLinkCostTest(unittest.TestCase):
                         % (peak / 1e6, len(source)))
 
 
+class LineFormCostTest(unittest.TestCase):
+    """A long line of short tokens costs no memory (N5').
+
+    `_line_id_forms` put every form up to the longest indexed id into a set, so
+    a 100 KB line of one-letter tokens beside a 64-character part number built
+    millions of forms: 1.86 s and 568 MB. The forms are yielded one at a time
+    now, and only for a length an indexed id actually has, so no form that
+    cannot match is built and no set is held.
+
+    The bound is generous: the bounded code needs about a twentieth of a second
+    and a few megabytes at this size.
+    """
+
+    SIZE = 100 * 1024
+    BOUND_SECONDS = 1.0
+    PEAK_BYTES = 50 * 1024 * 1024
+    LONG_ID = "Q" * 64
+
+    def test_a_long_line_of_one_letter_tokens_is_cheap(self):
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        tokens = []
+        length = len("Menge: 4 x 2\n")
+        index = 0
+        while length < self.SIZE:
+            tokens.append(letters[index % len(letters)])
+            length += 2
+            index += 1
+        source = ("Menge: 4 x 2\n"
+                  + " ".join(tokens) + " 2er-Pack " + self.LONG_ID + "\n")
+        extraction = {"items": [{"part_number": self.LONG_ID,
+                                 "quantity": 8}]}
+        # Both modes. The default suggests the same correction and writes
+        # nothing; apply=True writes it.
+        (checked, findings), elapsed, peak = _measure(
+            lambda: G.ground(extraction, source))
+        self.assertEqual([finding["action"] for finding in findings],
+                         ["suggested"])
+        self.assertEqual(findings[0]["new_value"], 4)
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "the default took %.3f s on %d characters of tokens"
+                        % (elapsed, len(source)))
+        self.assertLess(peak, self.PEAK_BYTES,
+                        "the default peaked at %.0f MB on %d characters"
+                        % (peak / 1e6, len(source)))
+        (checked, findings), elapsed, peak = _measure(
+            lambda: ground_write(extraction, source))
+        # The 64-character id stands on the line, so the line-form scan has real
+        # work to do and grounds the item: it may not pass by finding nothing.
+        self.assertEqual([finding["code"] for finding in findings],
+                         ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "apply=True took %.3f s on %d characters of tokens"
+                        % (elapsed, len(source)))
+        self.assertLess(peak, self.PEAK_BYTES,
+                        "apply=True peaked at %.0f MB on %d characters"
+                        % (peak / 1e6, len(source)))
+
+
 class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""
 
