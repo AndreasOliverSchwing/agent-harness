@@ -159,6 +159,10 @@ str. It does not coerce a wrong type: a silent `{"items": []}` would report a
 clean result for a caller bug. A missing `items` key is allowed and returns an
 empty list.
 
+Inside an item, a wrong type never raises. An `other_ids` entry that is not a
+string (a dict, a list, `None`) and a blank entry are skipped by every check that
+reads `other_ids`. The entry stays in the item.
+
 ### The finding contract
 
 Every finding, from every check, has exactly these eight keys:

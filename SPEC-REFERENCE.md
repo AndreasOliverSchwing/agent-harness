@@ -312,6 +312,10 @@ Rules:
 - `new_value` is `None` for `flagged` and `reported`: neither writes anything. A
   `reported` finding names the value it is about in `evidence`.
 - For the list key `other_ids`, `new_value` is the entry that was added.
+- `other_ids` entries must be strings. A check that reads `other_ids` skips every
+  entry that is not a string, and every blank string, so a caller-supplied dict,
+  list or `None` cannot raise out of `ground()`. The entry stays in the item; the
+  module only declines to read it as an id.
 - `VARIANT_SPLIT` is the one code where the two indexes differ. `item_index` is
   the surviving item; `input_index` is the variant line that was folded into it.
 - An appended item carries the marketplace id in `other_ids`

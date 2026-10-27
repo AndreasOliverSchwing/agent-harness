@@ -1651,6 +1651,11 @@ def _grounded_by_line(items, facts):
         if isinstance(link, str) and link:
             links.setdefault(link, set()).add(index)
         for link_id in _as_list(item.get("other_ids")):
+            if not isinstance(link_id, str) or not link_id.strip():
+                # other_ids is caller-supplied, so an entry may be any type. A
+                # dict or a list is not an id and is unhashable: it would raise
+                # TypeError out of ground(). Skip it, and skip a blank string.
+                continue
             links.setdefault(("id", link_id), set()).add(index)
         item_words[index] = _words(item.get("description"))
         # A description of one or two content words matches on one shared word

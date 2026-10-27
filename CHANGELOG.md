@@ -116,6 +116,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   same line. Another product's "2er-Pack" no longer rewrites a correct
   quantity of 8, and a set line whose item line sits further away corrects
   nothing.
+- A non-string `other_ids` entry no longer crashes the set check. A dict entry
+  raised `TypeError: unhashable type: 'dict'` out of `ground()`, but only when
+  the source carried a set line, because only that check builds the id index.
+  Every check that reads `other_ids` now skips an entry that is not a string, and
+  a blank string. The entry stays in the item. Documented in
+  `SPEC-REFERENCE.md`.
 - The docs no longer claim more than the code does. The module docstring said
   the module "never deletes an item" and "only adds a flag, attaches a value
   the source proves, or reports a fact": three checks remove, correct or

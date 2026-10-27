@@ -1173,6 +1173,33 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(checked["items"][0]["unit"], "set")
 
+    def test_a_non_string_other_id_does_not_crash_the_set_check(self):
+        # S4: other_ids is a caller-supplied list, so an entry may be any type.
+        # A dict is not an id: the set check skips it instead of raising
+        # TypeError: unhashable type: 'dict'.
+        extraction = {"items": [{
+            "part_number": "AC-44170", "quantity": 10,
+            "other_ids": [{"asin": "B0TESTAAA1"}, "EBAY:1"],
+        }]}
+        source = "AC-44170 Schraube 5er-Pack, Menge: 2 x 5\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 2)
+        self.assertEqual(checked["items"][0]["other_ids"],
+                         [{"asin": "B0TESTAAA1"}, "EBAY:1"])
+
+    def test_every_non_string_other_id_is_skipped(self):
+        # A tuple, a list, a set and None are not ids either.
+        for value in ({"asin": "B0TESTAAA1"}, ["EBAY:1"], (1, 2), {1, 2},
+                      None, 4, b"EBAY:1"):
+            extraction = {"items": [{"part_number": "AC-44170", "quantity": 10,
+                                     "other_ids": [value]}]}
+            checked, _findings = G.ground(extraction,
+                                          "AC-44170 Schraube 5er-Pack, "
+                                          "Menge: 2 x 5\n")
+            self.assertEqual(checked["items"][0]["quantity"], 2,
+                             "%r" % (value,))
+
 
 class GroundVariantSplitTest(unittest.TestCase):
     """VARIANT_SPLIT: one part number under one quantity is one item."""
