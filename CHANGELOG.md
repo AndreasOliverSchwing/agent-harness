@@ -21,6 +21,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- `REDACTED_LINK` no longer restores the wrong product. A cut link is restored
+  only when **exactly one** source link matches both the text before and the text
+  after the placeholder. Otherwise nothing is rewritten and the finding says
+  `flagged`, with the cut link in `old_value`. Every restore now sets
+  `uncertain: true`, because a restore is a data change. Two eBay links that
+  share `/itm/1` and two AliExpress ids that share `1005` no longer collide.
 - `VARIANT_SPLIT`: every `item_index` now points at the surviving item. Merges
   are found first and applied in input order, so a later pop cannot invalidate
   an index that was already recorded. A merge no longer loses data: the

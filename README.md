@@ -187,7 +187,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 |---|---|---|
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text | flags it, sets `uncertain: true`, keeps the item and the value |
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
-| `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link from the source text |
+| `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); otherwise leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`); a pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; reports `merged` |

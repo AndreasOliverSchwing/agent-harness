@@ -109,6 +109,24 @@ A producer that wants to gate its own output blocks on an item with `uncertain: 
 or on a finding with action `flagged` or `reported`. Those two are the ones the module
 cannot resolve on its own. The gating policy belongs to the producer, not to the spec.
 
+### REDACTED_LINK restores only a unique match
+
+A redaction cut leaves a link such as `https://de.aliexpress.com/item/1[Telefon]234567`.
+The text before the placeholder is the prefix; the text after it is the suffix. The
+module restores a source link only when **exactly one** source link starts with the
+prefix **and** ends with the suffix.
+
+- Exactly one match: the link is written back and the item gets `uncertain: true`.
+  The finding is `REDACTED_LINK` / `restored`.
+- No match, or more than one: nothing is rewritten. The item keeps the cut link and
+  gets `uncertain: true`. The finding is `REDACTED_LINK` / `flagged`, with the cut
+  link in `old_value` and `new_value` `None`.
+
+The uniqueness rule exists because a shared prefix proves nothing. Every AliExpress
+item id starts with `1005`, and two eBay links can share `/itm/1`, so the first link
+with a matching prefix is often another product. A wrong restore is worse than a flag:
+the item then quotes another product's price.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:

@@ -543,6 +543,50 @@ class GroundRedactedLinkTest(unittest.TestCase):
                          "https://de.aliexpress.com/item/1[Telefon]234567")
         self.assertEqual(findings[0]["new_value"], ALIEXPRESS_LINK)
         self.assertEqual(checked["items"][0]["link"], ALIEXPRESS_LINK)
+        # A restore is a data change, so the item is marked uncertain.
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_does_not_restore_the_other_products_link(self):
+        # QA 3, reproduced: two eBay links share the prefix
+        # "https://www.ebay.de/itm/1". Only the one that also ends with the
+        # text after the placeholder is this item's own link.
+        extraction = {"items": [{
+            "description": "Widget",
+            "link": "https://www.ebay.de/itm/1[Telefon]02101"}]}
+        source = ("Acme Tools - order confirmation\n"
+                  "https://www.ebay.de/itm/123456789001\n"
+                  "https://www.ebay.de/itm/198765402101\n")
+        checked, findings = G.ground(extraction, source)
+        item = checked["items"][0]
+        self.assertEqual(item["link"], "https://www.ebay.de/itm/198765402101")
+        restored = [f for f in findings if f["code"] == "REDACTED_LINK"]
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0]["action"], "restored")
+        self.assertEqual(restored[0]["new_value"],
+                         "https://www.ebay.de/itm/198765402101")
+        self.assertTrue(item["uncertain"])
+        # The other product is a link no item covers, so it is still added.
+        added = [f for f in findings if f["code"] == "UNCOVERED_LINK"]
+        self.assertEqual([f["new_value"] for f in added],
+                         ["https://www.ebay.de/itm/123456789001"])
+
+    def test_does_not_guess_between_two_aliexpress_links(self):
+        # Every AliExpress item id starts with 1005..., so a cut after
+        # ".../item/100500" matches both products. Nothing is rewritten.
+        cut_link = "https://de.aliexpress.com/item/100500[Telefon]4567"
+        extraction = {"items": [{"description": "Widget", "link": cut_link}]}
+        source = ("Acme Tools - order confirmation\n"
+                  "https://de.aliexpress.com/item/1005001234567\n"
+                  "https://de.aliexpress.com/item/1005009994567\n")
+        checked, findings = G.ground(extraction, source)
+        item = checked["items"][0]
+        self.assertEqual(item["link"], cut_link)
+        flagged = [f for f in findings if f["code"] == "REDACTED_LINK"]
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["action"], "flagged")
+        self.assertIsNone(flagged[0]["new_value"])
+        self.assertEqual(flagged[0]["old_value"], cut_link)
+        self.assertTrue(item["uncertain"])
 
     def test_ground_leaves_short_placeholder_alone(self):
         # A "[" inside the first 12 characters is part of the address, not a
@@ -555,17 +599,23 @@ class GroundRedactedLinkTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["link"], "https://a[1].example.com/x")
 
-    def test_ground_keeps_cut_link_when_no_source_link_matches(self):
-        # Nothing in the source starts with this prefix, so the cut link cannot
-        # be proven and stays as it is. The eBay link is then a new item.
+    def test_ground_flags_cut_link_when_no_source_link_matches(self):
+        # Nothing in the source both starts with this prefix and ends with
+        # this suffix, so the cut link cannot be proven. It stays as it is,
+        # the item is marked uncertain and the finding says "flagged".
         extraction = {"items": [{
             "description": "Widget",
             "link": "https://de.aliexpress.com/item/9[Telefon]999999"}]}
         source = "Acme Tools\n%s\n" % EBAY_LINK
         checked, findings = G.ground(extraction, source)
-        self.assertEqual([f["code"] for f in findings], ["UNCOVERED_LINK"])
+        self.assertEqual([f["code"] for f in findings],
+                         ["REDACTED_LINK", "UNCOVERED_LINK"])
+        self.assertEqual(findings[0]["action"], "flagged")
+        self.assertIsNone(findings[0]["new_value"])
+        self.assertEqual(findings[0]["field"], "link")
         self.assertEqual(checked["items"][0]["link"],
                          "https://de.aliexpress.com/item/9[Telefon]999999")
+        self.assertTrue(checked["items"][0]["uncertain"])
 
 
 class GroundSetMultipliedTest(unittest.TestCase):

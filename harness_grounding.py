@@ -79,8 +79,14 @@ Codes and actions in this module:
                                  has item_index None, both value slots None and
                                  nothing is changed; evidence names the GTIN.
     REDACTED_LINK / "restored"   an item link was cut by a redaction
-                                 placeholder such as "[Telefon]". The link from
-                                 the source text is put back. field is "link".
+                                 placeholder such as "[Telefon]" and exactly
+                                 one source link matches the text before and
+                                 after the cut. That link is put back and the
+                                 item is marked uncertain. field is "link".
+    REDACTED_LINK / "flagged"    same cut, but no source link or more than one
+                                 matches it. Nothing is rewritten, the item is
+                                 marked uncertain and the finding names the cut
+                                 link in old_value.
     UNCOVERED_LINK / "added"     a product link in the source that no item
                                  covers. A new item is appended and marked
                                  uncertain. field is "link", new_value the link.
@@ -105,8 +111,9 @@ link to any other host is not a product and is never added as an item.
 ground() returns (checked, findings). checked is a deep copy of the input, so
 the caller keeps the original and the module never mutates what it was given.
 Findings come in a stable order: VARIANT_SPLIT in item order, then
-UNGROUNDED_ID in item order, then REDACTED_LINK and UNCOVERED_LINK in source
-order, then SET_MULTIPLIED in source order, then MISSING_GTIN in source order.
+UNGROUNDED_ID in item order, then REDACTED_LINK in item order, then
+UNCOVERED_LINK in source order, then SET_MULTIPLIED in source order, then
+MISSING_GTIN in source order.
 
 VARIANT_SPLIT runs first because it is the only check that removes an item, so
 every later item_index is already final. UNGROUNDED_ID runs before any item is
@@ -421,15 +428,20 @@ def _check_redacted_links(items, origins, source_text):
 
     A redaction pass that protects phone numbers can hit a long digit run in a
     product link and leave ".../item/1[Telefon]234567". The text before the
-    placeholder still identifies the product, so the original link from the
-    source is restored when one starts with that prefix. A "[" inside the first
-    MIN_REDACTED_AT characters is not a cut in the middle of a path and is left
-    alone.
+    placeholder is the prefix and the text after it is the suffix. The link is
+    restored only when EXACTLY ONE source link starts with that prefix and ends
+    with that suffix: two links that share a prefix (every AliExpress id starts
+    with 1005...) are not evidence for either product.
+
+    No match or several matches means the cut link cannot be proven. It is left
+    exactly as the extractor wrote it and the item is flagged uncertain, so a
+    human checks it. A restore is also a data change, so it sets uncertain too.
+
+    A "[" inside the first MIN_REDACTED_AT characters is not a cut in the
+    middle of a path and is left alone without a finding.
     """
     findings = []
     links = find_links(source_text)
-    if not links:
-        return findings
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -440,22 +452,46 @@ def _check_redacted_links(items, origins, source_text):
         if cut < MIN_REDACTED_AT:
             continue
         prefix = link[:cut]
-        for candidate in links:
-            if not candidate.startswith(prefix):
-                continue
-            item["link"] = candidate
+        close = link.find("]", cut)
+        suffix = link[close + 1:] if close != -1 else ""
+        matches = [candidate for candidate in links
+                   if candidate.startswith(prefix) and candidate.endswith(suffix)]
+
+        item["uncertain"] = True
+        if len(matches) != 1:
             findings.append(_finding(
-                "REDACTED_LINK", "restored",
+                "REDACTED_LINK", "flagged",
                 evidence="item link %s was cut at character %d by a "
-                         "redaction placeholder; the source holds %s"
-                         % (link, cut, candidate),
+                         "redaction placeholder and %s"
+                         % (link, cut, _match_count_note(len(matches))),
                 field="link",
                 old_value=link,
-                new_value=candidate,
                 item_index=index,
                 input_index=origins[index]))
-            break
+            continue
+
+        candidate = matches[0]
+        item["link"] = candidate
+        findings.append(_finding(
+            "REDACTED_LINK", "restored",
+            evidence="item link %s was cut at character %d by a "
+                     "redaction placeholder; exactly one source link "
+                     "matches the text before and after it: %s"
+                     % (link, cut, candidate),
+            field="link",
+            old_value=link,
+            new_value=candidate,
+            item_index=index,
+            input_index=origins[index]))
     return findings
+
+
+def _match_count_note(count):
+    """Return the reason a cut link was not restored, for the evidence text."""
+    if count == 0:
+        return "no source link matches both the text before and the text after it"
+    return ("%d source links match both the text before and the text after it, "
+            "so the product is ambiguous" % count)
 
 
 def _check_uncovered_links(items, origins, source_text):
