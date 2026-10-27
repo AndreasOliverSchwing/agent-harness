@@ -41,6 +41,11 @@ finding = {
     "evidence": "...",         # short quotable reason, safe to show a human
 }
 
+A quantity is read as a count of whole pieces: a separator with exactly three
+digits behind it groups thousands ("1.000" and "1,000" are 1000) and one, two,
+four or more digits are a fraction ("1,5" is 1.5). A value above 10**9 or a
+digit run longer than 12 is not a quantity, so untrusted text cannot raise.
+
 THE FINDING CONTRACT. Every finding from every check carries exactly those
 eight keys and no others. The rules, once, for all six checks:
 
@@ -131,6 +136,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+from decimal import Decimal
 from urllib.parse import urlsplit
 
 # GS1 accepts these lengths. The check digit is the last digit in every case.
@@ -254,15 +260,45 @@ MARKETPLACE_DOMAINS = {
 _GTIN_KEYWORD = re.compile(
     r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b", re.IGNORECASE)
 
-# A quantity at the start of a line, with or without a unit word:
-# "4x", "4 x", "4 pcs", "4 Stück".
-_QTY_LEAD = re.compile(
-    r"^\s*(\d+(?:[.,]\d+)?)\s*(?:x|×|pcs?\.?|pieces?|stk\.?|stück)(?=\s|$)",
+# The largest quantity this module reads, and the longest digit run it will
+# look at. A quantity is a count of pieces; 10**9 is a billion pieces and no
+# order carries that. The cap keeps numeric parsing safe on untrusted text:
+# float(10 ** 400) raises OverflowError, and int() of a 5,000-digit run raises
+# ValueError on Python 3.11+ (sys.set_int_max_str_digits). Both must be a
+# "no quantity" answer, never a crash.
+MAX_QUANTITY = 10 ** 9
+MAX_QUANTITY_DIGITS = 12
+
+# A quantity word at the end of a value: "2 pcs", "2 Stück", "4x".
+_QUANTITY_UNIT = re.compile(
+    r"\s*(?:x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?)\s*$", re.IGNORECASE)
+
+# A value that is a number with optional separators, and nothing else. A price
+# with a currency sign ("12,50 €") is not a quantity and does not match.
+_NUMBER_TEXT = re.compile(r"[+-]?[\d.,]+")
+
+# A quantity that stands in front of a link on the same line: "4x <link>",
+# "1.000 Stück <link>". The digit runs are bounded so a long run cannot make
+# the pattern backtrack, and so no unbounded int() is reachable.
+_QTY_BEFORE = re.compile(
+    r"(\d{1,%d}(?:[.,]\d{1,%d})?)\s*"
+    r"(?:x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?)\s*$"
+    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
     re.IGNORECASE)
 
-# A line that holds nothing but a quantity: "4", "4 x", "4 pcs", "4 Stück".
-_QTY_ONLY = re.compile(
-    r"^\s*(\d+(?:[.,]\d+)?)\s*(?:x|×|pcs?\.?|pieces?|stk\.?|stück)?\s*$",
+# A line that holds nothing but a quantity: "4", "4 x", "4 pcs", "1.000 Stück".
+# Group 2 is the unit word; it is None for a bare number.
+_QTY_LINE = re.compile(
+    r"^\s*(\d{1,%d}(?:[.,]\d{1,%d})?)"
+    r"(?:\s*(x|×|pcs?\.?|pieces?|stk\.?|stück|units?|sets?))?\s*$"
+    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
+    re.IGNORECASE)
+
+# A line that carries money carries no quantity. A price sits on the same line
+# above a link that a quantity would sit on, so it needs its own rule.
+_CURRENCY = re.compile(
+    r"[€$£¥]|\b(?:eur|usd|chf|gbp|preis|price|sum|total|gesamt|netto|brutto"
+    r"|mwst|vat)\b",
     re.IGNORECASE)
 
 # "quantity: 28 x 5", "qty 28x5", "Menge: 28 x 5". The label is required: a
@@ -271,8 +307,14 @@ _QTY_ONLY = re.compile(
 # The colon sits inside one optional group on purpose. "\s*:?\s*" splits a run
 # of spaces between two quantifiers, so every split is tried: 20,000 spaces
 # after "qty" took 2.9 s. "\s*(?::\s*)?" has one owner for the run.
+# The digit runs are bounded and start and end on a digit boundary: a bare
+# "(\d+)" retries from every position inside a long run, and int() of a
+# 5,000-digit match raises ValueError on Python 3.11+. A set size is a small
+# number, so the cap is the quantity cap.
 _SET_LINE = re.compile(
-    r"\b(?:quantity|qty|menge)\s*(?::\s*)?(\d+)\s*[x×]\s*(\d+)", re.IGNORECASE)
+    r"\b(?:quantity|qty|menge)\s*(?::\s*)?(?<!\d)(\d{1,%d})\s*[x×]\s*"
+    r"(\d{1,%d})(?!\d)" % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS),
+    re.IGNORECASE)
 
 # Ways a supplier writes that the item is a pack of M pieces: "5 pack",
 # "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5", "5er".
@@ -722,15 +764,26 @@ def _check_uncovered_links(items, origins, source_text):
 
     A product link in the source is a position the extractor missed. The item
     is appended, never inserted, so the extractor's own order stays readable.
-    The quantity comes from the same line ("4x <link>") or from the line above
-    when that line holds nothing but a quantity. The marketplace id goes into
-    other_ids: it is not a part number and not a description.
+    The quantity is the one written in front of THAT link on the same line
+    ("4x <link>"), or, for the first link on its line, the quantity on the line
+    above when that line holds nothing but a quantity. Two links on one line
+    therefore get one quantity each, and a link with no quantity of its own
+    gets none: a single "4x" in front of two links belongs to the first one
+    only. The marketplace id goes into other_ids: it is not a part number and
+    not a description.
     """
     findings = []
     lines = source_text.splitlines()
     seen = set()
     for line_index, line in enumerate(lines):
+        # The text between the previous link on this line and this one. The
+        # quantity of a link is written in that segment, never in another
+        # link's segment.
+        previous_end = 0
         for match in _URL.finditer(line):
+            segment = line[previous_end:match.start()]
+            first_on_line = previous_end == 0
+            previous_end = match.end()
             url = _clean_link(match.group(0))
             if not url or url in seen:
                 continue
@@ -743,8 +796,8 @@ def _check_uncovered_links(items, origins, source_text):
             items.append({
                 "other_ids": [link_id],
                 "link": url,
-                "quantity": _link_quantity(lines, line_index, line,
-                                           match.group(0)),
+                "quantity": _link_quantity(lines, line_index, segment,
+                                           first_on_line),
                 "unit": "piece",
                 "uncertain": True,
             })
@@ -1121,26 +1174,102 @@ def _clean_link(url):
 def _to_number(value):
     """Return value as an int or float, or None when it holds no number.
 
-    A quantity arrives as 4, "4", 4.0 or "1,5" depending on the extractor. All
-    of those must compare equal to the number in the source.
+    A quantity arrives as 4, "4", 4.0, Decimal("4"), "2 pcs" or "1.000" (German
+    for 1000) depending on the extractor. All of those must compare equal to
+    the number in the source.
+
+    A quantity counts whole pieces, so the number of digits behind a separator
+    decides what the separator means. See _split_quantity_text.
+
+    The answer is None, never an exception, for a value this module cannot
+    trust: a number above MAX_QUANTITY, a digit run longer than
+    MAX_QUANTITY_DIGITS, a non-finite float, or text that is not a number.
+    float(10 ** 400) raises OverflowError and int() of a 5,000-digit run raises
+    ValueError on Python 3.11+, so both are rejected before conversion.
     """
     if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
-        number = float(value)
-    elif isinstance(value, str):
-        text = value.strip().replace(",", ".")
-        if not text:
+    if isinstance(value, int):
+        return value if abs(value) <= MAX_QUANTITY else None
+    if isinstance(value, float):
+        if not math.isfinite(value) or abs(value) > MAX_QUANTITY:
             return None
-        try:
-            number = float(text)
-        except ValueError:
+        return int(value) if value == int(value) else value
+    if isinstance(value, Decimal):
+        if not value.is_finite() or abs(value) > MAX_QUANTITY:
             return None
-    else:
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    if isinstance(value, str):
+        return _number_from_text(value)
+    return None
+
+
+def _number_from_text(text):
+    """Return the number a quantity value holds, or None.
+
+    "2 pcs" and "2 Stück" carry a quantity word after the number; the word is
+    dropped. A currency sign is not a quantity word, so "12,50 €" is None.
+    """
+    text = text.strip()
+    if not text:
         return None
-    if not math.isfinite(number):
+    text = _QUANTITY_UNIT.sub("", text).strip()
+    if not text or not _NUMBER_TEXT.fullmatch(text):
         return None
+    if sum(1 for character in text if "0" <= character <= "9") \
+            > MAX_QUANTITY_DIGITS:
+        return None
+    negative = text.startswith("-")
+    text = text.lstrip("+-")
+    whole, fraction = _split_quantity_text(text)
+    if not _is_ascii_digits(whole or "0"):
+        return None
+    if fraction is not None and not _is_ascii_digits(fraction):
+        return None
+    number = int(whole or "0")
+    if fraction:
+        number = number + int(fraction) / (10 ** len(fraction))
+    if number > MAX_QUANTITY:
+        return None
+    if negative:
+        number = -number
     return int(number) if number == int(number) else number
+
+
+def _split_quantity_text(text):
+    """Split a number text into its whole part and its fraction, or None.
+
+    A quantity counts whole pieces, so the digit count decides the meaning of
+    a separator and no locale is needed:
+
+    - three digits behind a separator group thousands: "1.000" and "1,000" are
+      both 1000, and "1.000.000" is one million;
+    - one, two, four or more digits behind a separator are a fraction: "1,5"
+      is 1.5 and "12,50" is 12.5;
+    - when both characters occur, the last one is the decimal separator, so
+      "1.234,56" and "1,234.56" are both 1234.56.
+
+    A repeated separator always groups: "1.000.000".
+    """
+    has_dot = "." in text
+    has_comma = "," in text
+    if has_dot and has_comma:
+        decimal = "." if text.rfind(".") > text.rfind(",") else ","
+        group = "," if decimal == "." else "."
+        head, _separator, tail = text.rpartition(decimal)
+        return head.replace(group, ""), tail
+    if not has_dot and not has_comma:
+        return text, None
+    separator = "." if has_dot else ","
+    parts = text.split(separator)
+    if len(parts) > 2:
+        return "".join(parts), None
+    head, tail = parts
+    if len(tail) == 3:
+        return head + tail, None
+    return head, tail
 
 
 def _quantity_of(item):
@@ -1187,24 +1316,61 @@ def _covers_link(item, url, link_id):
     return False
 
 
-def _link_quantity(lines, line_index, line, raw_url):
-    """Return the quantity that belongs to a link, or None.
+def _link_quantity(lines, line_index, segment, first_on_line):
+    """Return the quantity that belongs to one link, or None.
 
-    The quantity is on the same line before the link ("4x <link>"), or on the
-    line above when that line holds nothing but a quantity. A blank line above
-    is skipped: an empty line is layout, not information.
+    segment is the text on the link's own line between the previous link and
+    this one, so two links on one line cannot share a quantity. A quantity
+    written in front of the link ("4x <link>") belongs to it. A link with
+    nothing in front of it on its line takes the quantity from the line above,
+    but only the first link on a line: the second link of "4x <a> <b>" has no
+    quantity of its own and must not inherit one. A blank line above is
+    skipped: an empty line is layout, not information.
     """
-    rest = line.replace(raw_url, " ", 1)
-    match = _QTY_LEAD.match(rest)
+    match = _QTY_BEFORE.search(_without_markdown_text(segment))
     if match:
         return _to_number(match.group(1))
+    if not first_on_line:
+        return None
     for back in range(line_index - 1, -1, -1):
         previous = lines[back].strip()
         if not previous:
             continue
-        match = _QTY_ONLY.match(previous)
-        return _to_number(match.group(1)) if match else None
+        return _previous_line_quantity(previous)
     return None
+
+
+def _without_markdown_text(segment):
+    """Drop Markdown link text that sits between a quantity and its link.
+
+    A Markdown link puts its label between the quantity and the address, so
+    "4x [Hex bolt M8](<link>)" must still read as 4.
+    """
+    if not segment.rstrip().endswith("]("):
+        return segment
+    cut = segment.rfind("[")
+    return segment[:cut] if cut != -1 else segment
+
+
+def _previous_line_quantity(previous):
+    """Return the quantity a line above a link holds, or None.
+
+    The line must hold nothing but a quantity: a whole number ("2"), or a
+    number with a quantity word ("4 x", "2 pcs", "1.000 Stück"). A line that
+    carries money is never a quantity, and neither is a bare fraction: "12,50"
+    on its own line above a link is a price, not a count of 12.5 pieces.
+    """
+    if _CURRENCY.search(previous):
+        return None
+    match = _QTY_LINE.match(previous)
+    if not match:
+        return None
+    number = _to_number(match.group(1))
+    if number is None:
+        return None
+    if match.group(2) is None and isinstance(number, float):
+        return None
+    return number
 
 
 def _marked_pack_sizes(text):

@@ -270,6 +270,19 @@ name", not as a recall rate on real extractor output.
   carries in `gtin`, `part_number` or `other_ids` (with or without an `EAN:`
   label) is never attached again. `gtin14()` exposes the padded form.
 - Quantity words are English and German only (`x`, `pcs`, `Stück`, `Menge`, …).
+- **A quantity counts whole pieces.** The number of digits behind a separator
+  decides its meaning, so no locale is needed: three digits group thousands
+  (`1.000 Stück` and `1,000 x` are both 1000, `1.000.000` is one million), and
+  one, two, four or more digits are a fraction (`1,5` is 1.5, `12,50` is 12.5).
+  When both `.` and `,` occur, the last one is the decimal separator
+  (`1.234,56` and `1,234.56` are both 1234.56). A price is never a quantity: a
+  line with a currency sign (`12,50 €`, `EUR 12,50`, `Preis 12,50`) gives no
+  quantity, and neither does a bare fraction alone above a link (`12,50`).
+  Two links on one line get one quantity each; a link with no quantity in front
+  of it gets none. `"2 pcs"` and `Decimal("2")` are quantities, so
+  `VARIANT_SPLIT` keeps a line that carries one. Parsing is capped: a number
+  above `10**9` or a digit run longer than 12 is ignored, so `10**400` and a
+  5,000-digit run produce no quantity instead of an exception.
 - `SET_MULTIPLIED` needs a pack marker of the same size in the source text. It
   reads the whole source, so a marker of that size on another product's line can
   satisfy it. A pack word only in the extractor's description is never enough.

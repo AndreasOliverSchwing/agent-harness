@@ -23,6 +23,7 @@ import os
 import sys
 import time
 import unittest
+from decimal import Decimal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -1233,6 +1234,134 @@ class GroundLinkContractTest(unittest.TestCase):
             self.assertIsInstance(finding["action"], str)
             self.assertTrue(finding["item_index"] is None
                             or isinstance(finding["item_index"], int))
+
+
+class QuantityFormatTest(unittest.TestCase):
+    """QA 5: a quantity counts whole pieces, so a 3-digit group is not a fraction.
+
+    The rule, documented in README.md and SPEC-REFERENCE.md: a separator with
+    exactly three digits behind it groups thousands ("1.000 Stück" and
+    "1,000 x" are both 1000); one, two, four or more digits behind it are a
+    fraction ("1,5" is 1.5, "12,50" is 12.5). When both separators occur, the
+    last one is the decimal separator.
+    """
+
+    def test_dot_group_with_a_unit_word_is_a_thousand(self):
+        # German writes 1000 pieces as "1.000 Stück". One piece is wrong.
+        source = ("Acme Tools - order confirmation\n"
+                  "1.000 St\u00fcck\n"
+                  "https://www.amazon.de/dp/B0TEST1234\n")
+        checked, _findings = G.ground({"items": []}, source)
+        self.assertEqual(checked["items"][0]["quantity"], 1000)
+
+    def test_comma_group_is_a_thousand(self):
+        source = ("Acme Tools - order confirmation\n"
+                  "1,000 x\n"
+                  "https://www.amazon.de/dp/B0TEST1234\n")
+        checked, _findings = G.ground({"items": []}, source)
+        self.assertEqual(checked["items"][0]["quantity"], 1000)
+
+    def test_three_digits_behind_a_separator_are_a_group(self):
+        self.assertEqual(G._to_number("1.000"), 1000)
+        self.assertEqual(G._to_number("1,000"), 1000)
+        self.assertEqual(G._to_number("1.000.000"), 1000000)
+        self.assertEqual(G._to_number("1,000 St\u00fcck"), 1000)
+
+    def test_one_or_two_digits_behind_a_separator_are_a_fraction(self):
+        self.assertEqual(G._to_number("1,5"), 1.5)
+        self.assertEqual(G._to_number("12,50"), 12.5)
+        self.assertEqual(G._to_number("1.5"), 1.5)
+
+    def test_both_separators_make_the_last_one_the_decimal(self):
+        self.assertEqual(G._to_number("1.234,56"), 1234.56)
+        self.assertEqual(G._to_number("1,234.56"), 1234.56)
+
+    def test_a_price_on_the_line_above_is_never_a_quantity(self):
+        # A price sits where a quantity would sit: on its own line above a
+        # link. It is money, not a count.
+        for price in ("12,50 \u20ac", "12,50", "EUR 12,50", "Preis 12,50",
+                      "total 12,50"):
+            source = ("Acme Tools\n%s\nhttps://www.amazon.de/dp/B0TEST1234\n"
+                      % price)
+            checked, _findings = G.ground({"items": []}, source)
+            self.assertIsNone(checked["items"][0]["quantity"], price)
+
+    def test_a_price_value_is_not_a_quantity(self):
+        self.assertIsNone(G._to_number("12,50 \u20ac"))
+
+    def test_two_links_on_one_line_each_take_their_own_quantity(self):
+        source = ("Acme Tools\n"
+                  "4x https://www.amazon.de/dp/B0TEST1234 "
+                  "2x https://www.ebay.de/itm/123456789001\n")
+        checked, _findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [4, 2])
+
+    def test_one_quantity_for_two_links_leaves_the_second_without(self):
+        source = ("Acme Tools\n"
+                  "4x https://www.amazon.de/dp/B0TEST1234 "
+                  "https://www.ebay.de/itm/123456789001\n")
+        checked, _findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [4, None])
+
+    def test_pcs_string_quantity_keeps_the_variant_line(self):
+        # A line with a quantity of its own is a second position, not a
+        # variant. "2 pcs" is a quantity, so the line must survive.
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "quantity": "2 pcs"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
+        self.assertEqual(G._to_number("2 pcs"), 2)
+        self.assertEqual(G._to_number("2 St\u00fcck"), 2)
+
+    def test_decimal_quantity_keeps_the_variant_line(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "quantity": Decimal("2")},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(findings, [])
+        self.assertEqual(len(checked["items"]), 2)
+        self.assertEqual(G._to_number(Decimal("2")), 2)
+        self.assertEqual(G._to_number(Decimal("2.5")), 2.5)
+
+    def test_a_huge_int_quantity_does_not_raise(self):
+        # float(10 ** 400) raises OverflowError on every Python.
+        self.assertIsNone(G._to_number(10 ** 400))
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "Hex bolt set zinc", "part_number": "AC-4417",
+             "quantity": 10 ** 400},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        # An out-of-range number is not a quantity, so the line is a variant.
+        self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
+        self.assertEqual(len(checked["items"]), 1)
+
+    def test_a_five_thousand_digit_run_does_not_raise(self):
+        # int() of a long digit string raises ValueError on Python 3.11+.
+        run = "9" * 5000
+        self.assertIsNone(G._to_number(run))
+        self.assertIsNone(G._to_number(run + " pcs"))
+        source = "Acme Tools\nquantity: %s x 5\n" % run
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"], [])
+
+    def test_a_quantity_above_the_cap_is_ignored(self):
+        self.assertEqual(G._to_number(10 ** 9), 10 ** 9)
+        self.assertIsNone(G._to_number(10 ** 9 + 1))
+        self.assertIsNone(G._to_number("1" + "0" * 8 + "1"))
+        self.assertIsNone(G._to_number("9" * 13))
 
 
 if __name__ == "__main__":

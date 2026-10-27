@@ -197,6 +197,42 @@ and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and `AC–4417
 that is not a joiner is dropped from the value too, so `(AC-4417)` means
 `AC-4417`.
 
+### How a quantity is read
+
+A quantity counts whole pieces. That is the only fact the module needs, and it
+makes a separator unambiguous without knowing the locale:
+
+| Text | Digits behind the separator | Value |
+|---|---|---|
+| `1.000 Stück` | 3 | 1000 |
+| `1,000 x` | 3 | 1000 |
+| `1.000.000` | repeated | 1000000 |
+| `1,5` | 1 | 1.5 |
+| `12,50` | 2 | 12.5 |
+| `1.234,56` | both, `,` last | 1234.56 |
+| `1,234.56` | both, `.` last | 1234.56 |
+
+Three digits behind a separator group thousands. One, two, four or more digits
+are a fraction. When both `.` and `,` occur, the last one is the decimal
+separator. `"2 pcs"` and `Decimal("2")` are quantities, so a variant line that
+carries one is a second position and `VARIANT_SPLIT` keeps it.
+
+A price is never a quantity. A line that carries a currency sign (`12,50 €`,
+`EUR 12,50`, `Preis 12,50`, `total 12,50`) gives a link no quantity, and so does
+a bare fraction on its own line above a link (`12,50`): a count of 12.5 pieces
+does not exist, so the number is money.
+
+Two links on one line get one quantity each, because each link reads only the
+text between the previous link and itself (`4x <a> 2x <b>` is 4 and 2). A link
+with no quantity in front of it gets none: the second link of `4x <a> <b>` does
+not inherit the 4. Only the first link on a line may take the quantity from the
+line above.
+
+Parsing is capped so untrusted text cannot raise: a digit run longer than 12 is
+ignored, and a value above `10**9` is not a quantity. `10**400` raises
+`OverflowError` on `float()` and a 5,000-digit run raises `ValueError` on
+`int()` in Python 3.11+, so both are rejected before conversion.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:

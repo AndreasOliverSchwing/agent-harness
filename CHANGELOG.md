@@ -79,6 +79,19 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   compound (8 → 4 → 2). The pack size comes from the source text only; a pack
   word in the extractor's description is no longer accepted as evidence. `5
   pack` is now recognised alongside `5-pack`, `5er-Pack` and `5er Pack`.
+- Quantities are read as counts of whole pieces, so a German thousands group is
+  no longer read as a fraction: `1.000 Stück` and `1,000 x` are 1000, not 1. A
+  separator with three digits behind it groups; one, two, four or more digits
+  are a fraction (`1,5` is 1.5); with both `.` and `,` the last one is the
+  decimal separator (`1.234,56` is 1234.56). A price is never a quantity: a line
+  with a currency sign, and a bare fraction alone above a link, give the link no
+  quantity. Two links on one line get one quantity each, and a link with no
+  quantity in front of it gets none. `"2 pcs"` and `Decimal("2")` are quantities,
+  so `VARIANT_SPLIT` keeps a line that carries one. Numeric parsing is capped:
+  a digit run longer than 12 and a value above `10**9` are ignored, so `10**400`
+  (`OverflowError` on `float()`) and a 5,000-digit run (`ValueError` on `int()`
+  in Python 3.11+) give no quantity instead of an exception. Documented in
+  `SPEC-REFERENCE.md`, "How a quantity is read".
 
 ## 0.3.0 — 2026-10-25
 
