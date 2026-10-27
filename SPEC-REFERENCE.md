@@ -127,6 +127,19 @@ item id starts with `1005`, and two eBay links can share `/itm/1`, so the first 
 with a matching prefix is often another product. A wrong restore is worse than a flag:
 the item then quotes another product's price.
 
+### Which links are product links
+
+`product_link_id()` returns an id only for a link on a real marketplace domain.
+The host is reduced to its registrable domain, and that domain must be a key of
+`MARKETPLACE_DOMAINS` (`amazon.de`, `amazon.com`, `amazon.co.uk`, `ebay.de`,
+`ebay.com`, `ebay.co.uk`, `aliexpress.com` and siblings). Any subdomain of a
+listed domain is that marketplace, so `de.aliexpress.com` works.
+
+The rule is exact on purpose. `amazon.example.com`, `www.ebay.attacker.example`
+and `notamazon.de` are other people's domains; a product id read from them would
+point at a product that cannot be checked, and `UNCOVERED_LINK` would then append
+an item for a link that is not a shop's product page at all.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:

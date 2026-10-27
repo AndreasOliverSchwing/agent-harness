@@ -177,6 +177,42 @@ _AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Za-z0-9]{10})(?=/|$)")
 _EBAY_ITEM = re.compile(r"/itm/(\d+)")
 _ALIEXPRESS_ITEM = re.compile(r"/item/(\d+)")
 
+# The registrable domain of every marketplace this module recognises, mapped to
+# the marketplace name. A host is a marketplace host only when its registrable
+# domain is one of these exact strings: "amazon.example.com" and
+# "www.ebay.attacker.example" are other people's domains, whatever labels they
+# carry. Any subdomain of a listed domain is that marketplace.
+MARKETPLACE_DOMAINS = {
+    "amazon.de": "amazon",
+    "amazon.at": "amazon",
+    "amazon.ch": "amazon",
+    "amazon.com": "amazon",
+    "amazon.co.uk": "amazon",
+    "amazon.fr": "amazon",
+    "amazon.it": "amazon",
+    "amazon.es": "amazon",
+    "amazon.nl": "amazon",
+    "amazon.pl": "amazon",
+    "amazon.se": "amazon",
+    "amazon.com.tr": "amazon",
+    "amazon.ca": "amazon",
+    "amazon.com.au": "amazon",
+    "amazon.co.jp": "amazon",
+    "amazon.in": "amazon",
+    "ebay.de": "ebay",
+    "ebay.at": "ebay",
+    "ebay.ch": "ebay",
+    "ebay.com": "ebay",
+    "ebay.co.uk": "ebay",
+    "ebay.fr": "ebay",
+    "ebay.it": "ebay",
+    "ebay.es": "ebay",
+    "ebay.nl": "ebay",
+    "ebay.pl": "ebay",
+    "aliexpress.com": "aliexpress",
+    "aliexpress.us": "aliexpress",
+}
+
 # A quantity at the start of a line, with or without a unit word:
 # "4x", "4 x", "4 pcs", "4 Stück".
 _QTY_LEAD = re.compile(
@@ -298,20 +334,23 @@ def find_links(text):
 def product_link_id(url):
     """Return a stable id for a marketplace product link, or None.
 
-    The host decides. The label before the public suffix must be the
-    marketplace: "amazon", "ebay" or "aliexpress". A path that looks like a
-    product path on any other host is not a product link, because the id would
-    then point at nothing that can be checked.
+    The host decides, and it must be a real marketplace domain. The host is
+    reduced to its registrable domain ("www.amazon.de" -> "amazon.de") and that
+    domain must be in MARKETPLACE_DOMAINS. A label that merely contains the
+    name is not enough: "amazon.example.com" and "www.ebay.attacker.example" are
+    other people's domains, so an id from them would point at a product that
+    cannot be checked.
 
         https://www.amazon.de/dp/B0TEST1234          -> "ASIN:B0TEST1234"
         https://www.amazon.de/gp/product/B0TEST1234  -> "ASIN:B0TEST1234"
         https://www.ebay.de/itm/123456789012         -> "EBAY:123456789012"
         https://de.aliexpress.com/item/1005001234567 -> "ALIEXPRESS:1005001234567"
         https://www.example.com/p/AC-4417            -> None
+        https://amazon.example.com/dp/B0TEST1234     -> None
 
     The ASIN is upper-cased, so a link written in lower case gives the same id.
     A path segment before "/dp/" is allowed: Amazon puts the product title
-    there.
+    there. Any subdomain of a marketplace domain is that marketplace.
     """
     if not isinstance(url, str):
         return None
@@ -323,20 +362,36 @@ def product_link_id(url):
     except ValueError:
         return None
     host = (parts.hostname or "").lower()
-    labels = host.split(".")
-    if len(labels) < 2:
+    marketplace = _marketplace_of(host)
+    if marketplace is None:
         return None
-    names = set(labels[:-1])
     path = parts.path or ""
-    if "amazon" in names:
+    if marketplace == "amazon":
         match = _AMAZON_ASIN.search(path)
         return "ASIN:" + match.group(1).upper() if match else None
-    if "ebay" in names:
+    if marketplace == "ebay":
         match = _EBAY_ITEM.search(path)
         return "EBAY:" + match.group(1) if match else None
-    if "aliexpress" in names:
-        match = _ALIEXPRESS_ITEM.search(path)
-        return "ALIEXPRESS:" + match.group(1) if match else None
+    match = _ALIEXPRESS_ITEM.search(path)
+    return "ALIEXPRESS:" + match.group(1) if match else None
+
+
+def _marketplace_of(host):
+    """Return the marketplace that owns host, or None.
+
+    The host is matched on its exact registrable domain: the last two or three
+    labels must be in MARKETPLACE_DOMAINS. Two labels cover "amazon.de", three
+    cover "amazon.co.uk" and "amazon.com.tr". A longer suffix is never accepted,
+    so "amazon.example.com" stays a foreign domain.
+    """
+    if not host:
+        return None
+    labels = host.split(".")
+    for size in (3, 2):
+        if len(labels) >= size:
+            domain = ".".join(labels[-size:])
+            if domain in MARKETPLACE_DOMAINS:
+                return MARKETPLACE_DOMAINS[domain]
     return None
 
 

@@ -230,6 +230,12 @@ name", not as a recall rate on real extractor output.
 
 ### Limits
 
+- **A product link needs a real marketplace host.** `product_link_id()` accepts
+  only the registrable domains in `MARKETPLACE_DOMAINS`: `amazon.de`,
+  `amazon.com`, `amazon.co.uk`, `ebay.de`, `ebay.com`, `ebay.co.uk`,
+  `aliexpress.com` and their siblings. Any subdomain of one of those counts.
+  `amazon.example.com` and `www.ebay.attacker.example` do not: a path that looks
+  like a product path on another domain is never read as a product.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.

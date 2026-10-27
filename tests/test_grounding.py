@@ -458,6 +458,34 @@ class ProductLinkIdTest(unittest.TestCase):
         self.assertIsNone(G.product_link_id(
             "https://www.example.com/itm/123456789001"))
 
+    def test_product_link_id_rejects_a_marketplace_name_in_another_domain(self):
+        # QA 11: the marketplace must BE the registrable domain. A label that
+        # merely contains the name belongs to somebody else.
+        for url in ("https://amazon.example.com/dp/B0TEST1234",
+                    "https://www.ebay.attacker.example/itm/123456789001",
+                    "https://www.amazon.de.attacker.example/dp/B0TEST1234",
+                    "https://aliexpress.example.com/item/1005001234567",
+                    "https://notamazon.de/dp/B0TEST1234",
+                    "https://www.myaliexpress.com/item/1005001234567"):
+            self.assertIsNone(G.product_link_id(url), url)
+
+    def test_product_link_id_accepts_every_marketplace_domain(self):
+        # Subdomains are fine; the registrable domain is what counts.
+        cases = [
+            ("https://www.amazon.de/dp/B0TEST1234", "ASIN:B0TEST1234"),
+            ("https://amazon.com/dp/B0TEST1234", "ASIN:B0TEST1234"),
+            ("https://www.amazon.co.uk/dp/B0TEST1234", "ASIN:B0TEST1234"),
+            ("https://www.amazon.com.tr/dp/B0TEST1234", "ASIN:B0TEST1234"),
+            ("https://www.ebay.de/itm/123456789001", "EBAY:123456789001"),
+            ("https://www.ebay.co.uk/itm/123456789001", "EBAY:123456789001"),
+            ("https://www.aliexpress.com/item/1005001234567",
+             "ALIEXPRESS:1005001234567"),
+            ("https://de.aliexpress.com/item/1005001234567",
+             "ALIEXPRESS:1005001234567"),
+        ]
+        for url, expected in cases:
+            self.assertEqual(G.product_link_id(url), expected, url)
+
     def test_product_link_id_rejects_short_or_missing_path(self):
         # An ASIN is exactly 10 characters; 9 is not an ASIN.
         self.assertIsNone(G.product_link_id("https://www.amazon.de/dp/B0TEST123"))

@@ -21,6 +21,11 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- `product_link_id` accepts only real marketplace hosts. The host must reduce to
+  a registrable domain in `MARKETPLACE_DOMAINS` (`amazon.de`, `amazon.com`,
+  `ebay.co.uk`, `aliexpress.com`, ...). `amazon.example.com`,
+  `www.ebay.attacker.example` and `notamazon.de` are rejected, so a lookalike
+  domain can no longer inject a product id or an appended item.
 - `REDACTED_LINK` no longer restores the wrong product. A cut link is restored
   only when **exactly one** source link matches both the text before and the text
   after the placeholder. Otherwise nothing is rewritten and the finding says
