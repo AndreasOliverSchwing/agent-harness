@@ -2539,6 +2539,31 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][1]["quantity"], 8)
         self.assertEqual(checked["items"][1]["unit"], "piece")
 
+    def test_a_placeholder_on_the_owner_line_takes_no_set_correction(self):
+        # N3' from the 2026-10-27 second review. The appended item for the
+        # uncovered link sits on the owner line and, with apply=True, already
+        # holds the quantity 8 the link took from that line. The correction
+        # loop walked every item the owner line grounds, so the placeholder was
+        # rewritten to 4 sets as well. SPEC-REFERENCE.md says a placeholder this
+        # module appended never takes a set line.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 8,
+                                 "unit": "piece"}]}
+        source = ("AC-44170 Schraube 2er-Pack, 8 St\u00fcck "
+                  "https://www.amazon.de/dp/B0TESTAAA1\n"
+                  "Menge: 4 x 2\n")
+        checked, findings = G.ground(extraction, source)
+        set_findings = [f for f in findings if f["code"] == "SET_MULTIPLIED"]
+        self.assertEqual([f["item_index"] for f in set_findings], [0])
+        self.assertEqual(checked["items"][1].get("quantity"), None)
+        checked, findings = ground_write(extraction, source)
+        set_findings = [f for f in findings if f["code"] == "SET_MULTIPLIED"]
+        self.assertEqual([f["item_index"] for f in set_findings], [0])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+        # The unit is the one the uncovered-link check wrote from the source,
+        # not "set": the set check wrote nothing for the placeholder.
+        self.assertEqual(checked["items"][1]["unit"], "piece")
+
     def test_the_evidence_names_the_unit_change(self):
         # S1: the finding says what the unit becomes, not only the number.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}

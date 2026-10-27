@@ -429,7 +429,8 @@ name", not as a recall rate on real extractor output.
   stack else the line below it; the line below is read once for the whole stack
   and only when no line above the stack grounds an item. A set line whose item
   sits further away corrects nothing. An item on the set line keeps the line
-  even when its quantity does not parse, so no other item takes it. A pack word
+  even when its quantity does not parse, so no other item takes it. An item this
+  module appended for an uncovered link never takes a set line. A pack word
   only in the extractor's description is never enough.
   A line grounds an item by its part number, GTIN or link, or by the item's
   description words. The description is a fallback only: when the item's part

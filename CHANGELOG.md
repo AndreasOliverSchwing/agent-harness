@@ -295,6 +295,14 @@ below is one card of that round.
   line names one product, so it is that product's line. Tested in both modes.
   Documented in `SPEC-REFERENCE.md`, `README.md` and the `_grounded_by_line()`
   docstring.
+- **A placeholder on the owner line takes no set correction (N3′).** The
+  correction loop walked every item the owner line grounds, and the item this
+  module appends for an uncovered link sits on that line. With `apply=True` the
+  link check has already written the multiplied quantity there, so the
+  placeholder was rewritten to 4 sets as well, although `SPEC-REFERENCE.md`
+  says a placeholder never takes a set line. An item with `input_index` `None`
+  is skipped. Tested in both modes. Documented in `README.md` and the
+  `_check_set_multiplied()` docstring.
 
 ### Fixed in the second review round
 

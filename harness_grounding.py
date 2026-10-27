@@ -1291,6 +1291,11 @@ def _check_set_multiplied(items, origins, source_text, apply):
     parse. Such an item has nothing this check can correct, and it is the
     item the set line belongs to, so no other item takes the line.
 
+    A placeholder this module appended never takes a set line, even when it
+    sits on the owner line and holds the multiplied quantity the uncovered-link
+    check wrote there. It holds no extraction value, so there is nothing to
+    correct.
+
     The lines are walked once, not once per set line. Each set line offers the
     items its owner line grounds, and the earliest set line that fits an item's
     quantity corrects it. A mail with a thousand positions stays linear, which
@@ -1357,6 +1362,11 @@ def _check_set_multiplied(items, origins, source_text, apply):
             product = outer * pack
             for item_index in grounded[owner]:
                 if item_index in corrected:
+                    continue
+                if origins[item_index] is None:
+                    # A placeholder this module appended never takes a set
+                    # line. It holds no extraction value, so there is nothing
+                    # to correct.
                     continue
                 item = items[item_index]
                 if _quantity_of(item) != product:
