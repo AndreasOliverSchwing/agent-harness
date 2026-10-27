@@ -520,6 +520,9 @@ Rules:
 - `evidence` is cut at 200 characters with `…` when the quoted line is longer.
   A hostile mail can put 100 KB on one line, and one finding may not cost the
   length of that line.
+- Every `MISSING_GTIN` finding's `evidence` starts with `GTIN <number>: `, so
+  the cut can never drop the number the finding is about. The quote and the note
+  follow it.
 - An appended item carries the marketplace id in `other_ids`
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
   `description`. Its `input_index` is `None`. With the default `apply=False` it

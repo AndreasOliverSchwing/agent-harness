@@ -1697,6 +1697,42 @@ class UncoveredLinkUnitTest(unittest.TestCase):
                 self.assertEqual(items[0]["unit"], "piece")
 
 
+class MissingGtinEvidenceTest(unittest.TestCase):
+    """Fix round 3, card 3.3: a MISSING_GTIN names itself in the evidence (S12').
+
+    A finding's evidence quote stops at 200 characters. A position line longer
+    than that used to lose the GTIN at its end, so a "reported" finding said
+    nothing about which number it was about. Every MISSING_GTIN finding now
+    starts with the number, so the cut can never drop it.
+    """
+
+    def test_a_reported_gtin_on_a_long_line_names_itself(self):
+        line = ("Pos. 9:  " + "Kabelbinder schwarz 200 mm, " * 8
+                + "EAN 2000000000015")
+        self.assertEqual(len(line), 250)
+        # The line names no part number and no word of this item, so no item
+        # can take the GTIN and the finding is "reported".
+        extraction = {"items": [{"description": "Sechskantschraube M8"}]}
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                _checked, findings = G.ground(extraction, line, apply=apply)
+                self.assertEqual([f["code"] for f in findings],
+                                 ["MISSING_GTIN"])
+                finding = findings[0]
+                self.assertEqual(finding["action"], "reported")
+                self.assertIsNone(finding["item_index"])
+                self.assertTrue(finding["evidence"].startswith(
+                    "GTIN 2000000000015:"), finding["evidence"])
+
+    def test_an_attached_gtin_names_itself_in_the_evidence(self):
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = ground_write(extraction, ONE_GTIN_SOURCE)
+        self.assertEqual(findings[0]["action"], "attached")
+        self.assertTrue(findings[0]["evidence"].startswith(
+            "GTIN 2000000000008:"), findings[0]["evidence"])
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
+
+
 class GroundRedactedLinkTest(unittest.TestCase):
     """REDACTED_LINK: restore a product link that a redaction cut in two."""
 

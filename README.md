@@ -213,6 +213,8 @@ and the new one for others. Read `old_value` and `new_value`.
 
 `new_value` is `None` for a `flagged` or `reported` finding, because neither
 writes anything. A `reported` finding names the value it is about in `evidence`.
+Every `MISSING_GTIN` evidence starts with `GTIN <number>: `, so the
+200-character quote cut can never drop the number the finding is about.
 A `VARIANT_SPLIT` conflict is the same: the survivor keeps its own value, so
 nothing is written and `new_value` is `None`. The variant's value is in
 `old_value` and the survivor's value is named in `evidence`.

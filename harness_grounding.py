@@ -115,6 +115,9 @@ Codes and actions in this module:
     MISSING_GTIN  / "reported"   same, but no item could take it. The finding
                                  has item_index None, both value slots None and
                                  nothing is changed; evidence names the GTIN.
+                                 Every MISSING_GTIN evidence starts with
+                                 "GTIN <number>: ", so the 200-character quote
+                                 cut can never drop the number.
                                  This is the same in both modes.
     REDACTED_LINK / "restored"   an item link was cut by a redaction
                                  placeholder such as "[Telefon]" and exactly
@@ -1589,6 +1592,10 @@ def _check_missing_gtins(items, origins, source_text, apply):
     Each line is tokenised once, and the owner of a line is resolved once, no
     matter how many GTINs stand on it. The quadratic version re-tokenised the
     line for every number: 100 KB of numbers on one line took 186 s.
+
+    Every finding's evidence starts with "GTIN <number>: " and then quotes the
+    line. The quote is cut at 200 characters, so a long position line would
+    otherwise hide the number the finding is about (S12').
     """
     findings = []
     candidates = _gtin_candidates(source_text)
@@ -1624,8 +1631,12 @@ def _check_missing_gtins(items, origins, source_text, apply):
                     % (index, "took" if apply
                        else "has a suggestion for"))
             index = None
-        evidence = "%s (%s)" % (quotes[line_index], note) if line else \
-            "GTIN %s occurs in the source text (%s)" % (gtin, note)
+        # Every MISSING_GTIN evidence starts with the number, so the
+        # 200-character quote cut can never drop it (S12').
+        if line:
+            evidence = "GTIN %s: %s (%s)" % (gtin, quotes[line_index], note)
+        else:
+            evidence = "GTIN %s occurs in the source text (%s)" % (gtin, note)
         if index is None:
             findings.append(_finding(
                 "MISSING_GTIN", "reported",

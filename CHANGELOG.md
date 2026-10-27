@@ -214,6 +214,14 @@ below is one card of that round.
   gives no quantity, so nothing is suggested and nothing is written. `A` / `2
   Sets` is quantity 2 with unit `set`. Both modes are tested. Documented in
   `SPEC-REFERENCE.md`, `README.md` and the module docstring.
+- **A reported GTIN names itself in the evidence (S12′).** The evidence quoted
+  the position line and cut it at 200 characters, so a 250-character line that
+  ends in `, EAN 2000000000015` produced a `reported` finding with `old_value`,
+  `new_value` and `item_index` `None` and an evidence that stopped before the
+  number: nothing said which GTIN it was about. Every `MISSING_GTIN` finding's
+  evidence now starts with `GTIN <number>: `, then the quote and the note, so
+  the cut can never drop the number. Documented in `SPEC-REFERENCE.md`,
+  `README.md` and the module docstring.
 
 ### Fixed in the second review round
 
