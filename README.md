@@ -365,10 +365,12 @@ name", not as a recall rate on real extractor output.
 - **A GTIN needs its keyword.** `MISSING_GTIN` attaches a digit run only when
   the keyword in front of it names the number (`GTIN`, `EAN`, `UPC`, `Barcode`,
   `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an
-  optional `-13`/`-8` suffix — hyphen or no separator — or `Nr.` label) and the
-  run is not inside a link. Only the run directly after the keyword counts, so
-  another number on the same line is never taken for the GTIN. Eight digits
-  with a valid check digit are also how a phone number or an order number
+  optional `-13`/`-8` suffix — hyphen or no separator — or a `Nr.`/`No.` label,
+  which may follow with a hyphen, a space or no separator and may end in a full
+  stop or a colon: `EAN-Nr.:`, `EAN Nr.`, `EAN Nr.:`, `GTIN No.`, `Barcode Nr.`)
+  and the run is not inside a link. Only the run directly after the keyword
+  counts, so another number on the same line is never taken for the GTIN. Eight
+  digits with a valid check digit are also how a phone number or an order number
   looks, so a bare run proves nothing. A supplier that prints a GTIN with no
   keyword gets no attachment.
 - **A GTIN goes to the item its line names.** The part number on the GTIN's

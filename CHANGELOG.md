@@ -242,6 +242,15 @@ below is one card of that round.
   unchanged: `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`. Both modes
   are tested. Documented in `SPEC-REFERENCE.md`, `README.md`, the module
   docstring and `_id_occurs_verbatim()`.
+- **"EAN Nr." and "GTIN No." are read (S8′).** The label group in
+  `_GTIN_VALUE` put its word boundary after the optional full stop,
+  `\s+(?:nr\.?|no\.?)\b`. A full stop is not a word character, so the boundary
+  after `Nr.` fell between two non-word characters and never matched: `EAN Nr.
+  2000000000015`, `EAN Nr.:`, `GTIN No.` and `Barcode Nr.` produced no finding
+  at all. The boundary now stands before the stop, `(?:nr|no)\b\.?`, so all four
+  spellings name the run that follows them. `EAN-Code:` and `EAN-Nummer:` stay
+  out of scope: the docs never claimed them. Both modes are tested. Documented
+  in `SPEC-REFERENCE.md`, `README.md` and `_gtin_candidates()`.
 
 ### Fixed in the second review round
 

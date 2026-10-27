@@ -389,11 +389,16 @@ _GTIN_KEYWORD = re.compile(
 # "\s*:?\s*" splits the run between two quantifiers and every split is tried,
 # which is quadratic (20,000 spaces after "ean" took 2.8 s). "\s*(?::\s*)?"
 # keeps the run with the first quantifier.
+#
+# The "Nr."/"No." label puts its boundary BEFORE the optional full stop:
+# "(?:nr|no)\b\.?". A full stop is not a word character, so a boundary after
+# the stop sits between two non-word characters and never matches, and
+# "EAN Nr. 2000000000015" was read as no GTIN at all (S8').
 _GTIN_VALUE = re.compile(
     r"\b(?:%s)s?"
     r"(?:\s*[-\u2013]\s*(?:8|12|13|14|nr\.?|no\.?)(?=[\s:.]|$)"
     r"|\s*(?:8|12|13|14)(?=[\s:.]|$)"
-    r"|\s+(?:nr\.?|no\.?)\b)?"
+    r"|\s+(?:nr|no)\b\.?)?"
     r"\s*(?::\s*)?"
     r"(\d{8,14})(?!\d)" % _GTIN_KEYWORD_WORD,
     re.IGNORECASE)
@@ -1561,8 +1566,10 @@ def _gtin_candidates(source_text):
     proves nothing:
 
     - The line must name the number with a GTIN keyword: GTIN, EAN, UPC,
-      Barcode, Strichcode, with an optional length suffix or "Nr." label. The
-      GTIN is the digit run that follows the keyword. "Tel. +49 89 12345670"
+      Barcode, Strichcode, with an optional length suffix or "Nr."/"No." label.
+      The label follows with a hyphen, a space or no separator, and it may end
+      in a full stop or a colon: "EAN-Nr.:", "EAN Nr.", "EAN Nr.:", "GTIN No.".
+      The GTIN is the digit run that follows the keyword. "Tel. +49 89 12345670"
       and "Order 20261023" are valid check digits and are not GTINs, and
       neither is a number that sits elsewhere on a line that names a GTIN:
       "Bestellung 20261023, ... EAN 2000000000015" names one GTIN.

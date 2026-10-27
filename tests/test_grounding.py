@@ -836,6 +836,57 @@ class GtinKeywordRuleTest(unittest.TestCase):
         self.assertNotIn("gtin", checked["items"][1])
 
 
+class GtinNumberLabelTest(unittest.TestCase):
+    """S8' (fix round 3): "EAN Nr." and "GTIN No." are read.
+
+    The label group put its word boundary after the optional full stop:
+    `\\s+(?:nr\\.?|no\\.?)\\b`. A full stop is not a word character, so the
+    boundary after "Nr." fell between two non-word characters and the pattern
+    matched nothing: a line that said "EAN Nr. 2000000000015" produced no
+    finding at all.
+
+    The boundary now stands before the full stop: `(?:nr|no)\\b\\.?`. Both modes
+    are tested, because a suggestion that names no value the write mode writes
+    is a wrong suggestion.
+    """
+
+    ITEMS = {"items": [{"part_number": "AC-44170",
+                        "description": "Schraube M8", "quantity": 8}]}
+
+    def _source(self, label):
+        return ("AC-44170 Schraube M8, 8 St\u00fcck\n"
+                "%s 2000000000015" % label)
+
+    def _assert_label_names_the_gtin(self, label):
+        source = self._source(label)
+        checked, findings = G.ground(self.ITEMS, source)
+        self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"], label)
+        self.assertEqual(findings[0]["action"], "suggested", label)
+        self.assertEqual(findings[0]["field"], "gtin", label)
+        self.assertEqual(findings[0]["new_value"], "2000000000015", label)
+        self.assertEqual(findings[0]["item_index"], 0, label)
+        self.assertNotIn("gtin", checked["items"][0], label)
+        self.assertTrue(checked["items"][0]["uncertain"], label)
+
+        checked, findings = G.ground(self.ITEMS, source, apply=True)
+        self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"], label)
+        self.assertEqual(findings[0]["action"], "attached", label)
+        self.assertEqual(findings[0]["new_value"], "2000000000015", label)
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000015", label)
+
+    def test_ean_nr_with_a_space_and_a_full_stop(self):
+        self._assert_label_names_the_gtin("EAN Nr.")
+
+    def test_ean_nr_with_a_space_and_a_colon(self):
+        self._assert_label_names_the_gtin("EAN Nr.:")
+
+    def test_gtin_no_with_a_space_and_a_full_stop(self):
+        self._assert_label_names_the_gtin("GTIN No.")
+
+    def test_barcode_nr_with_a_space_and_a_full_stop(self):
+        self._assert_label_names_the_gtin("Barcode Nr.")
+
+
 class GtinLeadingZerosTest(unittest.TestCase):
     """A GTIN is one number space, not four (QA 7).
 
