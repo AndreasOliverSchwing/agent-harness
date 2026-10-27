@@ -593,11 +593,58 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 12)
 
-    def test_ground_ignores_multiplied_quantity_without_pack_marker(self):
-        # 140 is a plausible order of 140 single bolts. No pack word, no change.
-        extraction = {"items": [{"description": "Hex bolt",
+    def test_pack_word_in_the_description_is_not_evidence(self):
+        # The extractor wrote "5-pack"; the source never says pack. A pack size
+        # the source does not state is not a correction, it is a guess.
+        source = ("Acme Tools - order confirmation\n"
+                  "quantity: 28 x 5\n"
+                  "Hex bolt, part AC-4417\n")
+        extraction = {"items": [{"description": "Hex bolt 5-pack",
                                  "part_number": "AC-4417", "quantity": 140}]}
-        checked, findings = G.ground(extraction, SET_SOURCE)
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 140)
+        self.assertNotIn("uncertain", checked["items"][0])
+
+    def test_corrects_only_once_per_item(self):
+        # Two set lines both describe the same item. The first correction turns
+        # 8 into 4; the second line must not turn 4 into 2.
+        source = ("Acme Tools - order confirmation\n"
+                  "quantity: 4 x 2\n"
+                  "quantity: 2 x 2\n"
+                  "Washer 12 mm, 2-pack, part WW-2201\n")
+        extraction = {"items": [{"description": "Washer 12 mm, 2-pack",
+                                 "part_number": "WW-2201", "quantity": 8}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(findings[0]["old_value"], 8)
+        self.assertEqual(findings[0]["new_value"], 4)
+
+    def test_recognises_every_pack_marker_form(self):
+        # The pack marker must be in the source, in any of the ways a supplier
+        # writes it.
+        for marker in ("5 pack", "5-pack", "5er-Pack", "5er Pack"):
+            source = ("Acme Tools - order confirmation\n"
+                      "quantity: 28 x 5\n"
+                      "Hex bolt set, %s, part AC-4417\n" % marker)
+            extraction = {"items": [{"description": "Hex bolt set",
+                                     "part_number": "AC-4417",
+                                     "quantity": 140}]}
+            checked, findings = G.ground(extraction, source)
+            self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"],
+                             marker)
+            self.assertEqual(checked["items"][0]["quantity"], 28, marker)
+
+    def test_ignores_pack_marker_of_another_size(self):
+        # The source says 10-pack, the set line says 5. They are not the same
+        # pack, so the item is left alone.
+        source = ("Acme Tools - order confirmation\n"
+                  "quantity: 28 x 5\n"
+                  "Hex bolt set, 10-pack, part AC-4417\n")
+        extraction = {"items": [{"description": "Hex bolt set",
+                                 "part_number": "AC-4417", "quantity": 140}]}
+        checked, findings = G.ground(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 140)
 

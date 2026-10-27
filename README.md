@@ -189,7 +189,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link from the source text |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
-| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4 | sets quantity 3, unit `set`, `uncertain: true` |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`); a pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; reports `merged` |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
@@ -240,6 +240,9 @@ name", not as a recall rate on real extractor output.
 - The GTIN-to-item match uses word overlap on the description. A short or generic
   description ("Set", "Artikel") can miss, and the finding then carries no item.
 - Quantity words are English and German only (`x`, `pcs`, `Stück`, `Menge`, …).
+- `SET_MULTIPLIED` needs a pack marker of the same size in the source text. It
+  reads the whole source, so a marker of that size on another product's line can
+  satisfy it. A pack word only in the extractor's description is never enough.
 - The checks are mechanical pattern matches. They are deterministic on purpose: a
   grounding check that needs a model fails exactly when the extraction is least
   trustworthy.

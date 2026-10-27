@@ -186,9 +186,11 @@ _QTY_ONLY = re.compile(
 _SET_LINE = re.compile(
     r"\b(?:quantity|qty|menge)\s*:?\s*(\d+)\s*[x×]\s*(\d+)", re.IGNORECASE)
 
-# Ways a description marks a pack of M pieces.
+# Ways a supplier writes that the item is a pack of M pieces: "5 pack",
+# "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5", "5er".
 _PACK_MARKERS = (
     re.compile(r"(\d+)\s*-\s*pack\b", re.IGNORECASE),
+    re.compile(r"(\d+)\s*pack\b", re.IGNORECASE),
     re.compile(r"\bpack\s+of\s+(\d+)\b", re.IGNORECASE),
     re.compile(r"\bset\s+of\s+(\d+)\b", re.IGNORECASE),
     re.compile(r"(\d+)\s*er\b", re.IGNORECASE),
@@ -504,25 +506,33 @@ def _check_set_multiplied(items, origins, source_text):
     The source writes "quantity: 28 x 5" for 28 sets of 5. An extractor that
     reports 140 pieces has lost the set, and the quote then prices 140 single
     items. The quantity is set back to the number of sets.
+
+    Two rules keep the correction honest. The pack size comes from the source
+    text only: a pack word in the extractor's description is the extractor's
+    own claim and proves nothing about the order. And an item is corrected at
+    most once, so a second set line cannot compound one correction into
+    another (8 -> 4 -> 2).
     """
     findings = []
+    corrected = set()
     for match in _SET_LINE.finditer(source_text):
         outer = int(match.group(1))
         pack = int(match.group(2))
         # A "1 x 1" is not a set and "0" is not an order.
         if outer <= 0 or pack <= 1:
             continue
+        if not _marks_pack(source_text, pack):
+            continue
         for index, item in enumerate(items):
-            if not isinstance(item, dict):
+            if index in corrected or not isinstance(item, dict):
                 continue
             if _quantity_of(item) != outer * pack:
-                continue
-            if not _marks_pack(item.get("description"), pack):
                 continue
             old = item.get("quantity")
             item["quantity"] = outer
             item["unit"] = "set"
             item["uncertain"] = True
+            corrected.add(index)
             findings.append(_finding(
                 "SET_MULTIPLIED", "corrected",
                 evidence="source says \"%s\": %d sets of %d, so the "
@@ -889,16 +899,17 @@ def _link_quantity(lines, line_index, line, raw_url):
     return None
 
 
-def _marks_pack(description, pack):
-    """True when description marks a pack of exactly pack pieces.
+def _marks_pack(text, pack):
+    """True when text marks a pack of exactly pack pieces.
 
-    "5-pack", "pack of 5", "set of 5" and "5er" all say the same thing. The
-    number must match the pack size in the source; a "10-pack" is not a "5 x".
+    "5 pack", "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5" and
+    "5er" all say the same thing. The number must match the pack size; a
+    "10-pack" is not a "5 x".
     """
-    if not isinstance(description, str) or not description:
+    if not isinstance(text, str) or not text:
         return False
     for pattern in _PACK_MARKERS:
-        for match in pattern.finditer(description):
+        for match in pattern.finditer(text):
             if int(match.group(1)) == pack:
                 return True
     return False

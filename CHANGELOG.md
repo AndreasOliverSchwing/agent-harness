@@ -4,6 +4,34 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
+## Unreleased
+
+Fixes from the pre-release QA review of 0.3.0. No public API is removed, but the
+finding shape changes: read `old_value` / `new_value` instead of `value`.
+
+### Changed
+- **The finding contract is settled.** Every finding from all six checks has
+  exactly eight keys: `code`, `action`, `field`, `old_value`, `new_value`,
+  `item_index`, `input_index`, `evidence`. The ambiguous `value` key is gone: it
+  held the old value for some codes and the new one for others. `item_index`
+  names the item in the returned list; `input_index` names it in the list the
+  caller passed in, and is `None` for an appended item. Documented once in
+  `SPEC-REFERENCE.md` and in the module docstring.
+- An item appended for an uncovered link carries the marketplace id in
+  `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
+
+### Fixed
+- `VARIANT_SPLIT`: every `item_index` now points at the surviving item. Merges
+  are found first and applied in input order, so a later pop cannot invalidate
+  an index that was already recorded. A merge no longer loses data: the
+  variant's link, gtin and other_ids move onto the survivor when it lacks them,
+  and a value both lines carry differently is reported in the finding
+  (`old_value`) with `uncertain: true`. Variant notes keep input order.
+- `SET_MULTIPLIED`: corrected at most once per item, so two set lines cannot
+  compound (8 → 4 → 2). The pack size comes from the source text only; a pack
+  word in the extractor's description is no longer accepted as evidence. `5
+  pack` is now recognised alongside `5-pack`, `5er-Pack` and `5er Pack`.
+
 ## 0.3.0 — 2026-10-25
 
 **A well-formed artifact can still hold data the source never said.** The linter
