@@ -185,7 +185,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 
 | Code | What it catches | What it does |
 |---|---|---|
-| `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text | flags it, sets `uncertain: true`, keeps the item and the value |
+| `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); otherwise leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
@@ -241,6 +241,13 @@ name", not as a recall rate on real extractor output.
   millisecond. A timing test in the suite holds that bound.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
+- **An id is grounded on a token boundary, not as a substring.** A source that
+  holds `AC-4417` does not ground the part number `AC-441`, and the date
+  `2026-10-26` does not ground `2610`. A whole token of a source id is grounded:
+  `4417` in `AC-4417` counts. The joiners are `-`, `.`, `/`, `_`, whitespace and
+  the hyphen lookalikes a PDF leaves behind (U+2010, U+2011, U+2012, U+2013,
+  U+2014, U+2015, soft hyphen U+00AD, zero-width space U+200B), in the value and
+  in the source, so `AC–4417` (en dash) is the same id as `AC-4417`.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.
 - `UNCOVERED_LINK` appends a second item when the position exists but lost its
   link. Treat the pair as one position; it is a prompt to look, not a merge.

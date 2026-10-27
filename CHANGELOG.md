@@ -21,6 +21,14 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- `UNGROUNDED_ID` grounds an id on a token boundary, not as a substring. A
+  source that holds `AC-4417` no longer grounds `AC-441`, `NW-22019` no longer
+  grounds `NW-2201`, and the date `2026-10-26` no longer grounds `2610`. The
+  joiners `-`, `.`, `/`, `_`, whitespace and the hyphen lookalikes a PDF leaves
+  behind (U+2010, U+2011, U+2012, U+2013, U+2014, U+2015, soft hyphen U+00AD,
+  zero-width space U+200B) are normalized in the value and in the source, so an
+  id written with an en dash or a soft hyphen is not flagged. Documented in
+  `SPEC-REFERENCE.md`, "How an id is grounded".
 - Link scanning is linear in the length of the text. `_clean_link` strips the
   prose punctuation with `str.rstrip` instead of a `$`-anchored regex, which
   retried from every position: a 20,000-character link holding a long run of

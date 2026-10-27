@@ -140,6 +140,24 @@ and `notamazon.de` are other people's domains; a product id read from them would
 point at a product that cannot be checked, and `UNCOVERED_LINK` would then append
 an item for a link that is not a shop's product page at all.
 
+### How an id is grounded
+
+`UNGROUNDED_ID` grounds an id on a token boundary. A source that holds
+`AC-4417` does not ground the part number `AC-441`: the character after the
+match is a digit, so the occurrence sits inside a token. The same rule stops
+`2610` from being grounded by the date `2026-10-26`.
+
+A whole token of a source id is grounded. `AC-4417` is two tokens, so the part
+number `4417` counts.
+
+The joiners are `-`, `.`, `/`, `_`, whitespace and the hyphen lookalikes a PDF or
+a mail client leaves behind: U+2010, U+2011, U+2012, U+2013, U+2014, U+2015, soft
+hyphen U+00AD and zero-width space U+200B. A joiner is a boundary in the source
+and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and `AC–4417`
+(en dash) are one id, and none of them is flagged against the other. Punctuation
+that is not a joiner is dropped from the value too, so `(AC-4417)` means
+`AC-4417`.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:

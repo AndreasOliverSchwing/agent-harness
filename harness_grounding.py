@@ -68,9 +68,10 @@ other_ids ["ASIN:..."], the link, the quantity and the unit, nothing else.
 
 Codes and actions in this module:
 
-    UNGROUNDED_ID / "flagged"    an item id does not occur in the source text.
-                                 field is the key, old_value the id. The item
-                                 stays; uncertain is set True.
+    UNGROUNDED_ID / "flagged"    an item id does not occur in the source text
+                                 on a token boundary. field is the key,
+                                 old_value the id. The item stays; uncertain is
+                                 set True.
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
                                  extraction. It is attached to the best-matching
                                  item, which is marked uncertain. field is
@@ -153,7 +154,18 @@ MIN_REDACTED_AT = 12
 # equal and at least this long. Below it, two items can share an id by accident.
 MIN_VARIANT_ID_LEN = 5
 
-_SEPARATORS = re.compile(r"[\s\-./_]+")
+# The characters that join the parts of one id. A supplier writes AC-4417,
+# AC 4417, AC.4417 and AC/4417 for the same part. A PDF or a mail client also
+# swaps the hyphen for a lookalike: hyphen U+2010, non-breaking hyphen U+2011,
+# figure dash U+2012, en dash U+2013, em dash U+2014, horizontal bar U+2015,
+# soft hyphen U+00AD or zero-width space U+200B. All of them are separators
+# here, so the same id written with one of them stays the same id.
+_ID_JOINERS = "-./_\u2010\u2011\u2012\u2013\u2014\u2015\u00ad\u200b"
+_ID_JOINER_SET = frozenset(_ID_JOINERS)
+
+# Whitespace plus every joiner above. re.escape keeps "-" literal inside the
+# class; "\s" is kept so unicode spaces a table exports are separators too.
+_SEPARATORS = re.compile("[" + re.escape(_ID_JOINERS) + r"\s]+")
 
 # A standalone digit run: no digit directly before or after it. The negative
 # lookarounds are what stop "940063813339311" (15 digits) from matching as a
@@ -300,21 +312,121 @@ def find_gtins(text):
     return found
 
 
+def gtin14(code):
+    """Return code as a GTIN-14, or None when it is not a valid GTIN.
+
+    GS1 has one number space, not four: a GTIN-8, -12 and -13 are the GTIN-14
+    with leading zeros. Comparing the padded form is what makes "036000291452"
+    and "0036000291452" the same GTIN.
+
+        gtin14("036000291452")   # "00036000291452"
+        gtin14("0036000291452")  # "00036000291452"
+        gtin14("4006381333932")  # None, bad check digit
+    """
+    if not gtin_valid(code):
+        return None
+    return code.strip().zfill(14)
+
+
+# A label an extractor puts in front of a GTIN: "EAN:...", "GTIN 13:...",
+# "UPC-...". It names the number and is not part of it.
+_GTIN_LABEL = re.compile(
+    r"^(?:ean|gtin|upc)(?:[-\s]?\d{1,2})?\s*[:\-]?\s*", re.IGNORECASE)
+
+
+def _gtin14_of_value(value):
+    """Return the GTIN-14 form of an id value, with or without a label.
+
+    An extractor writes the same GTIN as "036000291452", "EAN:036000291452" or
+    "0036000291452". All three are the same number; None means the value is not
+    a valid GTIN at all.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    for candidate in (text, _GTIN_LABEL.sub("", text)):
+        form = gtin14(candidate)
+        if form is not None:
+            return form
+    return None
+
+
 def normalize_id(value):
-    """Return value upper-cased with whitespace, "-", ".", "/" and "_" removed.
+    """Return value upper-cased with whitespace and every id joiner removed.
 
     Two ids are the same id when their normalized forms are equal. That makes
     "ac-4417", "AC 4417" and "AC4417" one value, which is how a source text and
-    an extractor usually differ.
+    an extractor usually differ. The joiners are "-", ".", "/", "_", whitespace
+    and the hyphen lookalikes a PDF leaves behind: U+2010, U+2011, U+2012,
+    U+2013, U+2014, U+2015, soft hyphen U+00AD and zero-width space U+200B.
 
         normalize_id("ac-44 17/a.b_c")  # "AC4417ABC"
+        normalize_id("AC\\u20134417")     # "AC4417", en dash
         normalize_id(None)              # ""
+
+    This is the comparable form of an id, not the whole grounding rule: see
+    _id_form and _id_occurs, which also require a token boundary.
     """
     if value is None:
         return ""
     if not isinstance(value, str):
         value = str(value)
     return _SEPARATORS.sub("", value.upper())
+
+
+def _id_form(value):
+    """Return the comparable form of an id: upper-case letters and digits only.
+
+    Everything else is dropped, joiners included, so "AC-4417", "ac 4417",
+    "AC\u20134417" and "(AC-4417)" are one value. The form is compared against
+    the source on token boundaries, which is what stops a prefix from counting
+    as the id.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    return "".join(char for char in value.upper() if char.isalnum())
+
+
+def _source_id_index(text):
+    """Return (flat, boundary) for a source text.
+
+    flat is the text upper-cased with every character that is not a letter or a
+    digit removed. boundary[i] is True when flat position i is a token boundary
+    in the original text: the start, the end, or a position next to a character
+    that is not part of an id.
+
+    The boundaries are the point. A source that holds "AC-4417" also holds the
+    substring "AC-441", but not the token: the character after it is a digit, so
+    that occurrence is inside a token and grounds nothing.
+    """
+    flat = []
+    boundary = [True]
+    for char in text:
+        if not char.isalnum():
+            # A joiner or any other separator ends the token before it and
+            # starts the token after it: one boundary at this flat position.
+            boundary[-1] = True
+            continue
+        flat.append(char.upper())
+        boundary.append(False)
+    boundary[-1] = True
+    return "".join(flat), boundary
+
+
+def _id_occurs(flat_value, flat_source, boundary):
+    """True when flat_value occurs in flat_source on token boundaries."""
+    if not flat_value:
+        return False
+    start = flat_source.find(flat_value)
+    while start != -1:
+        if boundary[start] and boundary[start + len(flat_value)]:
+            return True
+        start = flat_source.find(flat_value, start + 1)
+    return False
 
 
 def find_links(text):
@@ -424,7 +536,6 @@ def ground(extraction, source_text):
     if not isinstance(source_text, str):
         source_text = ""
 
-    flat_source = normalize_id(source_text)
     # origins[i] is the index of items[i] in the caller's list, or None for an
     # item this module appended. It moves with every pop and append, so a
     # finding can name both the returned position and the input position.
@@ -435,7 +546,7 @@ def ground(extraction, source_text):
     # still valid in the final list. UNGROUNDED_ID runs before any item is
     # appended, so an item this module adds is never flagged against itself.
     findings.extend(_check_variant_split(items, origins))
-    findings.extend(_check_ids(items, origins, flat_source))
+    findings.extend(_check_ids(items, origins, source_text))
     findings.extend(_check_redacted_links(items, origins, source_text))
     findings.extend(_check_uncovered_links(items, origins, source_text))
     findings.extend(_check_set_multiplied(items, origins, source_text))
@@ -460,13 +571,24 @@ def _finding(code, action, evidence, field=None, old_value=None,
 
 # ── checks ─────────────────────────────────────────────────────────────────
 
-def _check_ids(items, origins, flat_source):
-    """UNGROUNDED_ID: flag item ids that do not occur in the normalized source.
+def _check_ids(items, origins, source_text):
+    """UNGROUNDED_ID: flag item ids that do not occur in the source text.
 
     Only part_number and gtin are checked. A value shorter than MIN_ID_LEN is
     skipped: it is too common to prove or disprove.
+
+    An id is grounded only on a token boundary. "AC-441" is not grounded by a
+    source that holds "AC-4417", and "2610" is not grounded by the date
+    2026-10-26. A gtin is compared as a GTIN-14, so the same number with or
+    without its leading zeros is grounded either way.
     """
     findings = []
+    flat_source, boundary = _source_id_index(source_text)
+    source_gtins14 = set()
+    for gtin in find_gtins(source_text):
+        form = gtin14(gtin)
+        if form is not None:
+            source_gtins14.add(form)
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -474,14 +596,19 @@ def _check_ids(items, origins, flat_source):
             raw = item.get(key)
             if raw is None or raw == "":
                 continue
-            flat = normalize_id(raw)
-            if len(flat) < MIN_ID_LEN or flat in flat_source:
+            if key == "gtin":
+                form = _gtin14_of_value(raw)
+                if form is not None and form in source_gtins14:
+                    continue
+            flat = _id_form(raw)
+            if len(flat) < MIN_ID_LEN or _id_occurs(flat, flat_source, boundary):
                 continue
             item["uncertain"] = True
             findings.append(_finding(
                 "UNGROUNDED_ID", "flagged",
                 evidence="%s=%s normalizes to %s, which does not occur in "
-                         "the source text" % (key, raw, flat),
+                         "the source text on a token boundary"
+                         % (key, raw, flat),
                 field=key,
                 old_value=raw if isinstance(raw, str) else str(raw),
                 item_index=index,

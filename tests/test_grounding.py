@@ -235,6 +235,75 @@ class GroundIdentifierTest(unittest.TestCase):
         self.assertNotIn("uncertain", checked["items"][0])
 
 
+class GroundIdTokenBoundaryTest(unittest.TestCase):
+    """UNGROUNDED_ID grounds a whole token, never a substring (QA 8).
+
+    A prefix of a real id is not that id. "AC-441" is not grounded by
+    "AC-4417", and the digits "2610" are not grounded by the date 2026-10-26.
+    The other half of the rule: the characters a PDF or a mail client puts
+    inside an id (en dash, non-breaking hyphen, soft hyphen, zero-width space)
+    are separators, so the same id written with one of them stays grounded.
+    """
+
+    # Every character a real mail has been seen to put where a hyphen belongs.
+    JOINERS = ("\u2013", "\u2011", "\u00ad", "\u200b")
+
+    def test_ground_flags_an_id_that_is_only_the_prefix_of_a_source_id(self):
+        source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "AC-441"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+        self.assertEqual(findings[0]["old_value"], "AC-441")
+        self.assertEqual(checked["items"][0]["part_number"], "AC-441")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_ground_flags_an_id_that_is_only_the_prefix_of_a_longer_id(self):
+        source = "Northwind Supply\n2 x Washer 12 mm, part NW-22019\n"
+        extraction = {"items": [{"description": "Washer 12 mm",
+                                 "part_number": "NW-2201"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+
+    def test_ground_flags_digits_that_only_occur_inside_a_date(self):
+        source = "Acme Tools\nOrder date 2026-10-26\n4 x Hex bolt M8\n"
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "2610"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+        self.assertEqual(findings[0]["old_value"], "2610")
+
+    def test_ground_grounds_an_id_written_with_a_unicode_dash(self):
+        # The source carries the odd character, the extraction the plain one.
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "AC-4417"}]}
+        for joiner in self.JOINERS:
+            source = ("Acme Tools\n4 x Hex bolt M8, part AC%s4417\n" % joiner)
+            checked, findings = G.ground(extraction, source)
+            self.assertEqual(findings, [], "joiner %r" % joiner)
+            self.assertNotIn("uncertain", checked["items"][0],
+                             "joiner %r" % joiner)
+
+    def test_ground_grounds_a_value_written_with_a_unicode_dash(self):
+        # The other way round: the extraction carries the odd character.
+        source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
+        for joiner in self.JOINERS:
+            extraction = {"items": [
+                {"description": "Hex bolt M8",
+                 "part_number": "AC%s4417" % joiner}]}
+            _checked, findings = G.ground(extraction, source)
+            self.assertEqual(findings, [], "joiner %r" % joiner)
+
+    def test_ground_grounds_a_token_of_a_source_id(self):
+        # "AC-4417" is two tokens. A part number that IS one of those tokens is
+        # grounded: the boundary rule stops prefixes, not whole words.
+        source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "4417"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+
 class GroundMissingGtinTest(unittest.TestCase):
     """MISSING_GTIN: attach what the source proves, report what it cannot place."""
 
