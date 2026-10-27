@@ -265,6 +265,19 @@ below is one card of that round.
   are tested in both modes. Documented in `SPEC-REFERENCE.md`, `README.md` and
   the `_check_missing_gtins()`, `_gtin_owner()` and `_names_an_item()`
   docstrings.
+- **A stack of set lines corrects only the position it belongs to (S1′).** The
+  per-line owner pass ran before the block pass, so the second set line of a
+  stack took the position below it and one stack was split between two
+  positions. `Pos. 1: AC-44170 … 2er-Pack / Bestellmenge: 4 x 2 /
+  Liefermenge: 4 x 2 / Pos. 2: NW-22010 … 2er-Pack, 8 Stück` rewrote both items
+  to 4 sets; only AC-44170 is corrected now. A set line reads its own line and
+  the line above; the line below is read once for a whole stack, and only when
+  no line above the stack grounds an item. On the realistic German mail this
+  keeps Pos. 50 at "6 Stück" instead of 3 sets. Both modes are tested.
+  `test_a_block_of_set_lines_corrects_only_its_own_item` asserted the split the
+  docs never claimed; it now asserts the documented rule. Documented in
+  `SPEC-REFERENCE.md`, `README.md` and the `_check_set_multiplied()` and
+  `_set_owner_lines()` docstrings.
 
 ### Fixed in the second review round
 

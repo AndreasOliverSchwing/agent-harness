@@ -2418,9 +2418,12 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["quantity"], 8)
 
     def test_a_block_of_set_lines_corrects_only_its_own_item(self):
-        # S1 (c): two set lines in one block, one product above and one below.
-        # Each set line belongs to the product next to it, so the Kabelbinder's
-        # own "3 x 2" is not replaced by the screw's "4 x 2".
+        # S1 (c), rewritten for S1' of the second review. SPEC-REFERENCE.md says
+        # a stack of set lines whose own lines ground nothing shares ONE owner
+        # line: the line above the stack, else the line below it. This test
+        # asserted the opposite split (each set line taking the product next to
+        # it), which the docs never claimed. The stack belongs to NW-22010
+        # above it, so only NW-22010 is corrected; AC-44170 keeps its 8.
         extraction = {"items": [
             {"part_number": "NW-22010", "quantity": 8},
             {"part_number": "AC-44170", "quantity": 8},
@@ -2431,9 +2434,60 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "AC-44170 Schraube 2er-Pack, 8 St\u00fcck\n")
         checked, findings = ground_write(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
-        self.assertEqual(findings[0]["item_index"], 1)
+        self.assertEqual(findings[0]["item_index"], 0)
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+
+    def test_a_stack_of_set_lines_corrects_only_the_item_above_it(self):
+        # S1' from the 2026-10-27 second review. The per-line owner pass ran
+        # before the block pass, so the second set line of the stack took the
+        # position below it and both items were rewritten to 4 sets. A stack
+        # shares the line above it, so only AC-44170 is corrected.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 8, "unit": "piece"},
+            {"part_number": "NW-22010", "quantity": 8, "unit": "piece"},
+        ]}
+        source = ("Pos. 1: AC-44170 Sechskantschraube M8, 2er-Pack\n"
+                  "Bestellmenge: 4 x 2\n"
+                  "Liefermenge: 4 x 2\n"
+                  "Pos. 2: NW-22010 Kabelbinder 200 mm, 2er-Pack, 8 St\u00fcck")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "suggested")
+        self.assertEqual(findings[0]["item_index"], 0)
+        self.assertEqual(findings[0]["new_value"], 4)
         self.assertEqual(checked["items"][0]["quantity"], 8)
-        self.assertEqual(checked["items"][1]["quantity"], 4)
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+        self.assertNotIn("uncertain", checked["items"][1])
+        checked, findings = ground_write(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "corrected")
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+        self.assertEqual(checked["items"][1]["quantity"], 8)
+        self.assertEqual(checked["items"][1]["unit"], "piece")
+
+    def test_a_stack_of_set_lines_does_not_reach_the_position_below(self):
+        # S1' on the realistic German mail of the review. Pos. 40 carries a
+        # stack of two set lines and Pos. 50 states "6 St\u00fcck" of a 2er-Pack.
+        # The stack belongs to Pos. 40, so Pos. 50 keeps its 6 pieces.
+        extraction = {"items": [
+            {"part_number": "ZZ-40000",
+             "description": "Profilzylinder 30/30 2er-Pack",
+             "quantity": 6, "unit": "piece"},
+            {"description": "D\u00fcbel 6 mm 2er-Pack", "quantity": 6,
+             "unit": "piece"},
+        ]}
+        source = ("Pos. 40: ZZ-40000 Profilzylinder 30/30, 2er-Pack\n"
+                  "Bestellmenge: 3 x 2\n"
+                  "Liefermenge: 3 x 2\n"
+                  "Pos. 50: D\u00fcbel 6 mm, 2er-Pack, 6 St\u00fcck\n")
+        checked, findings = ground_write(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["item_index"], 0)
+        self.assertEqual(checked["items"][0]["quantity"], 3)
+        self.assertEqual(checked["items"][1]["quantity"], 6)
+        self.assertNotIn("uncertain", checked["items"][1])
 
     def test_the_evidence_names_the_unit_change(self):
         # S1: the finding says what the unit becomes, not only the number.

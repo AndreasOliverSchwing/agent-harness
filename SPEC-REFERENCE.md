@@ -413,10 +413,13 @@ Two conditions must hold, and both must hold on one line:
 
 1. **The item belongs to the set line.** A set line belongs to the items
    grounded on its own line. When its own line grounds no item, it belongs to
-   the line directly above it; when that line grounds none either, to the line
-   directly below it. A stack of set lines whose own lines ground nothing
-   shares one owner line: the line above the stack, else the line below it,
-   because a supplier writes one position's set lines together. Only an item
+   the line directly above it. A stack of set lines whose own lines ground
+   nothing shares one owner line: the line above the stack, else the line below
+   it, because a supplier writes one position's set lines together. The line
+   below a stack is read once for the whole stack, and only when no line above
+   the stack grounds an item. A set line of a stack never reaches the line
+   below on its own: that split one stack between two positions and rewrote a
+   correct quantity on the position below. Only an item
    the extractor produced and that states a quantity can own a set line, so a
    placeholder this module appended never takes one.
    A line grounds an item when the part number occurs on it on a token

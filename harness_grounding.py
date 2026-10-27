@@ -1276,11 +1276,13 @@ def _check_set_multiplied(items, origins, source_text, apply):
 
     The owning item is decided per set line, not per block of set lines. A set
     line belongs to the items grounded on its own line; when its own line
-    grounds none, to the items grounded on the line directly above; when that
-    line grounds none either, to the items grounded on the line directly below.
-    A stack of set lines whose own lines ground nothing shares one owner line
-    (the line above the stack, else the line below it), because a supplier
-    writes one position's set lines together. A pack marker that names the same
+    grounds none, to the items grounded on the line directly above. A stack of
+    set lines whose own lines ground nothing shares one owner line (the line
+    above the stack, else the line below it), because a supplier writes one
+    position's set lines together. The line below a stack is read once for the
+    whole stack, and only when no line above it grounds an item: a set line of
+    a stack never reaches down to the position below on its own, which would
+    split one stack between two positions. A pack marker that names the same
     pack size must sit on the set line or on the owner line. A pack marker on
     another product's line is another product's pack, so a missed correction is
     the safe answer.
@@ -2280,18 +2282,24 @@ def _set_owner_lines(by_line, grounded, has_set, line_count):
     """Return {set-line index: owner-line index} for the set check.
 
     A set line belongs to the items grounded on its own line. When its own line
-    grounds no item, it belongs to the line directly above it; when that line
-    grounds none either, to the line directly below. A stack of set lines whose
-    own lines ground nothing shares one owner line, taken from the line above
-    the stack or, failing that, the line below it: a supplier writes one
-    position's set lines together, so the stack is one position.
+    grounds no item, it belongs to the line directly above it. A stack of set
+    lines whose own lines ground nothing shares one owner line, taken from the
+    line above the stack or, failing that, the line below it: a supplier writes
+    one position's set lines together, so the stack is one position.
+
+    The line above is read per line, the line below only per stack. A stack of
+    set lines is one position, so no set line of a stack may reach down to the
+    position below it on its own: that split one stack between two positions
+    and rewrote a correct quantity on the position below.
 
     A line that grounds no item at all is never an owner, so a set line next to
     nothing is dropped instead of reaching across the mail.
     """
     owner = {}
     for line_index in by_line:
-        for candidate in (line_index, line_index - 1, line_index + 1):
+        # Own line first, then the line above. Never the line below: a stack of
+        # set lines shares one owner line, which the block pass below decides.
+        for candidate in (line_index, line_index - 1):
             if 0 <= candidate < line_count and grounded[candidate]:
                 owner[line_index] = candidate
                 break

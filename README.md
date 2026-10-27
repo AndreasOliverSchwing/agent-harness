@@ -239,7 +239,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, unless the line's description words match exactly one other item, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A tie or no match is reported with no item (`reported`, in both modes) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); the comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, with the source's quantity and unit); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
-| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line or on the line directly above it, and a stack of set lines shares one owner line (the line above the stack, else the line below it, read once for the whole stack), and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
@@ -424,9 +424,12 @@ name", not as a recall rate on real extractor output.
   `10**400` and a 5,000-digit run produce no quantity instead of an exception.
 - `SET_MULTIPLIED` needs a pack marker of the same size in the source text, on
   the set line or on the item's own line. A set line belongs to one item: the
-  item on its own line, else the one on the line directly above, else the one on
-  the line directly below. A set line whose item sits further away corrects
-  nothing. A pack word only in the extractor's description is never enough.
+  item on its own line, else the one on the line directly above. A stack of set
+  lines whose own lines ground nothing shares one owner line, the line above the
+  stack else the line below it; the line below is read once for the whole stack
+  and only when no line above the stack grounds an item. A set line whose item
+  sits further away corrects nothing. A pack word only in the extractor's
+  description is never enough.
   A line grounds an item by its part number, GTIN or link, or by the item's
   description words. The description is a fallback only: when the item's part
   number occurs anywhere in the source, only a line that carries that id
