@@ -112,14 +112,19 @@ Codes and actions in this module:
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
-                                 field is "note", new_value the note added. Its
-                                 link, gtin and other_ids move onto the
-                                 survivor when it lacks them; a value both
+                                 One finding per field written onto the
+                                 survivor: "note" (new_value the note added,
+                                 with the merged line's own note appended),
+                                 "link", "gtin" and "other_ids" (one finding
+                                 per entry added). Every one of them has
+                                 input_index of the merged line. A value both
                                  lines carry differently stays on the survivor
                                  and is reported as one more VARIANT_SPLIT
                                  finding for that field, with old_value the
                                  merged line's value and new_value None,
-                                 because nothing was written.
+                                 because nothing was written. A unit or a price
+                                 is never written and a difference is reported
+                                 the same way.
 
 A link is a product link only when product_link_id() returns an id for it. A
 link to any other host is not a product and is never added as an item.
@@ -1096,11 +1101,16 @@ def _check_variant_split(items, origins):
         label = variant.get("description") or normalize_id(
             first.get("part_number"))
         piece = "variant: %s" % label
+        variant_note = variant.get("note")
+        if isinstance(variant_note, str) and variant_note.strip():
+            # The variant's own note is data the extractor found. A merge that
+            # drops it loses a fact the source states.
+            piece = "%s (%s)" % (piece, variant_note.strip())
         note = first.get("note")
         first["note"] = ("%s · %s" % (note, piece)) if note else piece
         first["uncertain"] = True
-        merges.append((first, _merge_variant_values(first, variant), piece,
-                       input_of[index]))
+        writes, conflicts = _merge_variant_values(first, variant)
+        merges.append((first, writes, conflicts, piece, input_of[index]))
 
     removed = set(index for index, _first_index in pairs)
     kept = [index for index in range(len(items)) if index not in removed]
@@ -1111,7 +1121,7 @@ def _check_variant_split(items, origins):
     origins[:] = [input_of[index] for index in kept]
 
     findings = []
-    for first, conflicts, piece, variant_input in merges:
+    for first, writes, conflicts, piece, variant_input in merges:
         position = position_of[id(first)]
         number = normalize_id(first.get("part_number"))
         findings.append(_finding(
@@ -1123,13 +1133,25 @@ def _check_variant_split(items, origins):
             new_value=piece,
             item_index=position,
             input_index=variant_input))
+        for key, old, new in writes:
+            findings.append(_finding(
+                "VARIANT_SPLIT", "merged",
+                evidence="the merged line carries %s %s and the surviving item "
+                         "held none, so it is written onto item %d"
+                         % (key, new, position),
+                field=key,
+                old_value=old,
+                new_value=new,
+                item_index=position,
+                input_index=variant_input))
         for key, theirs, ours in conflicts:
             findings.append(_finding(
                 "VARIANT_SPLIT", "merged",
                 evidence="the merged line carries %s %s and the surviving item "
                          "carries %s; the survivor keeps its own value and the "
                          "merged one is reported here"
-                         % (key, theirs, ours),
+                         % (key, theirs,
+                            ours if ours is not None else "nothing"),
                 field=key,
                 old_value=theirs,
                 new_value=None,
@@ -1141,11 +1163,19 @@ def _check_variant_split(items, origins):
 
 
 def _merge_variant_values(survivor, variant):
-    """Move what the variant holds and the survivor lacks. Return conflicts.
+    """Move what the variant holds and the survivor lacks.
 
-    A conflict is (field, variant_value, survivor_value): both lines carry a
-    different value, the survivor keeps its own and the variant's is reported.
+    Return (writes, conflicts). A write is (field, old_value, new_value): the
+    survivor did not hold the value, so it was written onto it. A conflict is
+    (field, variant_value, survivor_value): both lines carry a different value,
+    the survivor keeps its own and the variant's is reported. Nothing is written
+    for a conflict.
+
+    A unit or a price is never written, because a merge cannot prove which one
+    the order line means. When the two lines differ, the difference is reported
+    as a conflict, so the value is not lost.
     """
+    writes = []
     conflicts = []
     for key in ("link", "gtin"):
         theirs = variant.get(key)
@@ -1154,6 +1184,7 @@ def _merge_variant_values(survivor, variant):
         ours = survivor.get(key)
         if not isinstance(ours, str) or not ours.strip():
             survivor[key] = theirs
+            writes.append((key, None, theirs))
             continue
         if key == "link":
             same = (_clean_link(theirs).lower() == _clean_link(ours).lower())
@@ -1169,7 +1200,39 @@ def _merge_variant_values(survivor, variant):
                  if normalize_id(value) not in known]
         if added:
             survivor["other_ids"] = ours_ids + added
-    return conflicts
+            for value in added:
+                writes.append(("other_ids", None, value))
+    for key in ("unit", "price"):
+        theirs = variant.get(key)
+        if not _has_text(theirs):
+            continue
+        ours = survivor.get(key)
+        if _same_text(theirs, ours):
+            continue
+        conflicts.append((key, theirs, ours))
+    return writes, conflicts
+
+
+def _has_text(value):
+    """True when value is a value a finding can name: not None and not blank."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _same_text(first, second):
+    """True when two field values say the same thing, ignoring case and space.
+
+    A number and the same number written as a string compare equal. Two
+    different spellings of one unit ("Stück" and "piece") do not, and that is
+    deliberate: the module does not own a unit dictionary, so it reports the
+    difference instead of guessing that the two are the same.
+    """
+    if not _has_text(second):
+        return False
+    return str(first).strip().casefold() == str(second).strip().casefold()
 
 
 def _gtin_candidates(source_text):

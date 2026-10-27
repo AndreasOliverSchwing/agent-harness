@@ -203,7 +203,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); otherwise leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item; the evidence names the unit change |
-| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; reports `merged` |
+| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
 module never drops an item without a finding, and never rewrites a value into
@@ -211,10 +211,16 @@ something the source does not prove — an unsupported part number is flagged, n
 repaired, because the source does not say what the right value is.
 `VARIANT_SPLIT` is the only check that removes an item; it reports `merged` and
 keeps the part number and the variant label on the surviving item. A merge never
-loses data: the variant's link, gtin and other_ids move onto the survivor when it
-lacks them. When both lines carry a different value for one key, the survivor
-keeps its own and the other value is named in the finding (`old_value`) with
-`uncertain: true`. Variant notes read in the order the source lists them.
+loses data, and it never writes without a finding. It reports one `merged`
+finding per field it writes onto the survivor: `note`, `link`, `gtin` and
+`other_ids` (one finding per entry added). Each of those findings has
+`item_index` of the survivor and `input_index` of the merged line, so the record
+says where the value came from. When both lines carry a different value for one
+key, the survivor keeps its own, nothing is written, and the other value is named
+in the finding (`old_value`) with `new_value: null` and `uncertain: true`.
+A `unit` or a `price` is never written; a value that differs is reported the same
+way. Variant notes read in the order the source lists them, and the merged line's
+own note is appended as `variant: <label> (<note>)`.
 
 ### Synthetic benchmark
 

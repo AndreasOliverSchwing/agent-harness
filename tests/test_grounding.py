@@ -1601,12 +1601,84 @@ class GroundVariantSplitTest(unittest.TestCase):
              "other_ids": ["SUP-77"]},
         ]}
         checked, findings = G.ground(extraction, source)
-        self.assertEqual([f["code"] for f in findings], ["VARIANT_SPLIT"])
         item = checked["items"][0]
         self.assertEqual(item["link"], AMAZON_LINK)
         self.assertEqual(item["gtin"], "2000000000008")
         self.assertEqual(item["other_ids"], ["SUP-77"])
         self.assertTrue(item["uncertain"])
+        # S8: one finding per field the merge writes, and the input_index names
+        # the merged line the value came from.
+        merged = [f for f in findings if f["code"] == "VARIANT_SPLIT"]
+        self.assertEqual([f["field"] for f in merged],
+                         ["note", "link", "gtin", "other_ids"])
+        self.assertEqual([f["input_index"] for f in merged], [1, 1, 1, 1])
+        self.assertEqual([f["item_index"] for f in merged], [0, 0, 0, 0])
+        self.assertEqual([f["new_value"] for f in merged[1:]],
+                         [AMAZON_LINK, "2000000000008", "SUP-77"])
+        self.assertEqual([f["old_value"] for f in merged[1:]],
+                         [None, None, None])
+
+    def test_a_moved_gtin_is_reported_as_a_write(self):
+        # S8 input from the 2026-10-27 recheck: the gtin moved from input item
+        # 1 onto item 0, and nothing recorded the write.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "AC-44170", "gtin": "2000000000015"},
+        ]}
+        source = "Acme Tools\nPos. 1: AC-44170 Schraube M8, 4 St\u00fcck\n"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
+        writes = [f for f in findings
+                  if f["code"] == "VARIANT_SPLIT" and f["field"] == "gtin"]
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0]["new_value"], "2000000000015")
+        self.assertEqual(writes[0]["old_value"], None)
+        self.assertEqual(writes[0]["input_index"], 1)
+        self.assertEqual(writes[0]["item_index"], 0)
+
+    def test_the_variants_own_note_is_appended_not_lost(self):
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4, "note": "checked"},
+            {"part_number": "AC-4417", "note": "zinc plated"},
+        ]}
+        checked, _findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(checked["items"][0]["note"],
+                         "checked · variant: AC4417 (zinc plated)")
+
+    def test_a_differing_unit_is_reported(self):
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4, "unit": "piece"},
+            {"part_number": "AC-4417", "unit": "set"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(checked["items"][0]["unit"], "piece")
+        unit = [f for f in findings if f["field"] == "unit"]
+        self.assertEqual(len(unit), 1)
+        self.assertEqual(unit[0]["old_value"], "set")
+        self.assertIsNone(unit[0]["new_value"])
+        self.assertEqual(unit[0]["input_index"], 1)
+
+    def test_a_differing_price_is_reported(self):
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4, "price": "12,50"},
+            {"part_number": "AC-4417", "price": "11,90"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(checked["items"][0]["price"], "12,50")
+        price = [f for f in findings if f["field"] == "price"]
+        self.assertEqual(len(price), 1)
+        self.assertEqual(price[0]["old_value"], "11,90")
+        self.assertIsNone(price[0]["new_value"])
+
+    def test_an_equal_unit_and_price_are_not_reported(self):
+        # Only a value that differs is news.
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4, "unit": "piece",
+             "price": "12,50"},
+            {"part_number": "AC-4417", "unit": "Piece", "price": "12,50"},
+        ]}
+        _checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual([f["field"] for f in findings], ["note"])
 
     def test_merge_keeps_survivor_value_and_reports_the_variant(self):
         # Both lines carry a link and the two differ. The survivor keeps its

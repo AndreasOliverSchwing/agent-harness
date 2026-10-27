@@ -352,6 +352,28 @@ An item is corrected at most once, and the pack size always comes from the
 source text. The forms `5 pack`, `5-pack`, `5er-Pack` and `5er Pack` all name
 the pack size 5.
 
+### A merge reports every field it writes
+
+`VARIANT_SPLIT` folds a repeated part number into the item it repeats. The
+survivor is the first item of that part number; the merged line has no quantity
+field of its own, so it is not a second position.
+
+A merge writes four fields at most, and it reports each one it writes with its
+own finding: `note`, `link`, `gtin` and `other_ids`. Each finding has
+`item_index` of the survivor and `input_index` of the merged line, so a reader
+can tell where the value came from. `other_ids` gets one finding per entry
+added, and `new_value` is that entry.
+
+Nothing a merge touches is dropped:
+
+- the merged line's own `note` is appended to the survivor's note,
+  `variant: <label> (<note>)`;
+- a `unit` or a `price` is never written, because a merge cannot prove which
+  value the order line means. A value that differs from the survivor's is
+  reported as a conflict: `old_value` is the merged line's value, `new_value` is
+  `None`, and `evidence` names the value the survivor kept. The two compare
+  ignoring case and surrounding space, so `piece` and `Piece` are one value.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:
