@@ -519,7 +519,8 @@ Rules:
   counts the returned list, `input_index` counts the caller's list.
 - `evidence` is cut at 200 characters with `…` when the quoted line is longer.
   A hostile mail can put 100 KB on one line, and one finding may not cost the
-  length of that line.
+  length of that line. Every quoted value is cut this way: the set line of a
+  `SET_MULTIPLIED` finding, and both links of a `REDACTED_LINK` finding.
 - Every `MISSING_GTIN` finding's `evidence` starts with `GTIN <number>: `, so
   the cut can never drop the number the finding is about. The quote and the note
   follow it.

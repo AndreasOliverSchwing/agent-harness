@@ -222,6 +222,12 @@ below is one card of that round.
   evidence now starts with `GTIN <number>: `, then the quote and the note, so
   the cut can never drop the number. Documented in `SPEC-REFERENCE.md`,
   `README.md` and the module docstring.
+- **Every quoted value in an evidence is capped (N2′).** `SET_MULTIPLIED` quoted
+  the whole set-line match, so `Menge:` followed by 50,000 spaces gave 50,112
+  characters of evidence. `REDACTED_LINK` quoted the cut link and the candidate,
+  so a 50 KB path gave 100,209 characters. Both now pass every quoted value
+  through `_quote`, so each stops at 200 characters with `…`. `old_value` and
+  `new_value` still carry the full value. Documented in `SPEC-REFERENCE.md`.
 
 ### Fixed in the second review round
 

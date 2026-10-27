@@ -1733,6 +1733,48 @@ class MissingGtinEvidenceTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
 
 
+class EvidenceLengthTest(unittest.TestCase):
+    """Fix round 3, card 3.3: every evidence quote is capped (N2').
+
+    A hostile mail can put 100 KB on one line. A finding's evidence is one short
+    quotable sentence (SPEC-REFERENCE.md), so no finding may carry the whole
+    line: the quote stops at 200 characters.
+    """
+
+    def test_a_set_line_with_a_long_space_run_does_not_bloat_the_evidence(self):
+        source = ("Acme Tools\nMenge:%s4 x 5\n"
+                  "Hex bolt set, 5-pack, part AC-4417\n" % (" " * 50000))
+        extraction = {"items": [{"description": "Hex bolt set, 5-pack",
+                                 "part_number": "AC-4417", "quantity": 20,
+                                 "unit": "piece"}]}
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                _checked, findings = G.ground(extraction, source, apply=apply)
+                self.assertEqual([f["code"] for f in findings],
+                                 ["SET_MULTIPLIED"])
+                evidence = findings[0]["evidence"]
+                self.assertLess(len(evidence), 500)
+                self.assertNotIn(" " * 1000, evidence)
+
+    def test_a_redacted_link_with_a_long_path_does_not_bloat_the_evidence(self):
+        path = "https://www.example.com/p/" + "a" * 50000
+        source = path + "b" * 10
+        extraction = {"items": [{"description": "Widget",
+                                 "link": path + "[Telefon]" + "b" * 10}]}
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                _checked, findings = G.ground(extraction, source, apply=apply)
+                restored = [f for f in findings if f["code"] == "REDACTED_LINK"]
+                self.assertEqual([f["action"] for f in restored], ["restored"])
+                evidence = restored[0]["evidence"]
+                # Two quotes, each capped at 200 characters, plus the fixed
+                # sentence: neither the cut link nor the candidate may carry
+                # the whole 50 KB path.
+                self.assertNotIn("a" * 250, evidence)
+                self.assertNotIn("b" * 250, evidence)
+                self.assertLess(len(evidence), 600)
+
+
 class GroundRedactedLinkTest(unittest.TestCase):
     """REDACTED_LINK: restore a product link that a redaction cut in two."""
 

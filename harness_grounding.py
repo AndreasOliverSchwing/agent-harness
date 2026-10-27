@@ -40,6 +40,11 @@ finding = {
     "evidence": "...",         # short quotable reason, safe to show a human
 }
 
+Every value a finding quotes in its evidence is cut at 200 characters with an
+ellipsis, so the cost of a finding never grows with the length of the line it
+quotes. A MISSING_GTIN finding puts its GTIN before the quote, so the cut can
+never drop the number it is about.
+
 A quantity is read as a count of whole pieces: a separator with exactly three
 digits behind it groups thousands ("1.000" and "1,000" are 1000) and one, two,
 four or more digits are a fraction ("1,5" is 1.5). A repeated separator groups
@@ -991,7 +996,8 @@ def _check_redacted_links(items, origins, source_text):
                 "REDACTED_LINK", "flagged",
                 evidence="item link %s was cut at character %d by a "
                          "redaction placeholder and %s"
-                         % (link, cut, _match_count_note(len(matches))),
+                         % (_quote(link), cut,
+                            _match_count_note(len(matches))),
                 field="link",
                 old_value=link,
                 item_index=index,
@@ -1005,7 +1011,7 @@ def _check_redacted_links(items, origins, source_text):
             evidence="item link %s was cut at character %d by a "
                      "redaction placeholder; exactly one source link "
                      "matches the text before and after it: %s"
-                     % (link, cut, candidate),
+                     % (_quote(link), cut, _quote(candidate)),
             field="link",
             old_value=link,
             new_value=candidate,
@@ -1290,7 +1296,7 @@ def _check_set_multiplied(items, origins, source_text, apply):
                     evidence="source says \"%s\": %d sets of %d, so the "
                              "quantity %s %d sets and not %d pieces; "
                              "unit \"%s\" -> \"set\""
-                             % (match.group(0), outer, pack,
+                             % (_quote(match.group(0)), outer, pack,
                                 "is" if apply else "would be",
                                 outer, product,
                                 old_unit if isinstance(old_unit, str)
