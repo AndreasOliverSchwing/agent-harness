@@ -336,8 +336,17 @@ name", not as a recall rate on real extractor output.
   `2026-10-26` does not ground `2610`. A whole token of a source id is grounded:
   `4417` in `AC-4417` counts. The joiners are `-`, `.`, `/`, `_`, whitespace and
   the hyphen lookalikes a PDF leaves behind (U+2010, U+2011, U+2012, U+2013,
-  U+2014, U+2015, soft hyphen U+00AD, zero-width space U+200B), in the value and
-  in the source, so `AC–4417` (en dash) is the same id as `AC-4417`.
+  U+2014, U+2015, soft hyphen U+00AD, zero-width space U+200B, minus sign
+  U+2212, fullwidth hyphen U+FF0D, word joiner U+2060, byte-order mark U+FEFF),
+  in the value and in the source, so `AC–4417` (en dash) is the same id as
+  `AC-4417`.
+- **An id that occurs verbatim is grounded, whatever punctuation it holds.** The
+  source text is searched for the id's own characters, case-insensitive, and
+  both ends of the match must fall on a token boundary. A cable or fastener
+  designation therefore needs no joiner rule: `NYM-J 3x1,5`, `H07V-K 1x2,5`,
+  `SPAX 4,5x40`, `M8×40` and `AC-4417(B)` are grounded when the source prints
+  them. The boundary rule still applies: `NYM-J 3x1,5` is not grounded by
+  `NYM-J 3x1,55`.
 - **Only a joiner may sit inside a grounded id.** Any other punctuation ends the
   token, so `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`, `AC-4417 | 8`
   does not ground `AC-4417-8`, and `Art.-Nr. 4417 (10 Stück)` does not ground

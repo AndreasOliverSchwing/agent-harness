@@ -284,14 +284,25 @@ number `4417` counts.
 
 The joiners are `-`, `.`, `/`, `_`, whitespace and the hyphen lookalikes a PDF or
 a mail client leaves behind: U+2010, U+2011, U+2012, U+2013, U+2014, U+2015, soft
-hyphen U+00AD and zero-width space U+200B. A joiner is a boundary in the source
-and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and `AC–4417`
-(en dash) are one id, and none of them is flagged against the other. Punctuation
-that is not a joiner is dropped from the value too, so `(AC-4417)` means
-`AC-4417`.
+hyphen U+00AD, zero-width space U+200B, minus sign U+2212, fullwidth hyphen
+U+FF0D, word joiner U+2060 and byte-order mark U+FEFF. A joiner is a boundary in
+the source and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and
+`AC–4417` (en dash) are one id, and none of them is flagged against the other.
+Punctuation that is not a joiner is dropped from the value too, so `(AC-4417)`
+means `AC-4417`.
 
-Only a joiner may sit INSIDE a grounded id. Any other punctuation ends the token,
-so a match that runs through `,` `|` `(` `)` `;` or `:` grounds nothing:
+An id that occurs verbatim is grounded too, whatever punctuation it holds. The
+source text is searched for the id's own characters, case-insensitive, and both
+ends of the match must fall on a token boundary. This is what a German cable or
+fastener designation needs: `NYM-J 3x1,5`, `H07V-K 1x2,5`, `SPAX 4,5x40`,
+`M8×40` and `AC-4417(B)` hold a comma, a multiplication sign or a bracket, which
+no joiner rule can absorb, and each is grounded when the source prints it. The
+boundary rule still holds: `NYM-J 3x1,5` is not grounded by `NYM-J 3x1,55`,
+because the character after the match is a digit.
+
+Only a joiner may sit INSIDE an id that is compared in its flat form. Any other
+punctuation ends the token, so a match that runs through `,` `|` `(` `)` `;` or
+`:` grounds nothing:
 `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`, `AC-4417 | 8 | Stück` does
 not ground `AC-4417-8`, and `Art.-Nr. 4417 (10 Stück)` does not ground `4417-10`.
 

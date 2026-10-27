@@ -394,6 +394,91 @@ class IdTokenPunctuationTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class VerbatimIdTest(unittest.TestCase):
+    """S7' (fix round 3): an id that occurs verbatim is grounded.
+
+    A German cable or fastener designation carries punctuation that is not a
+    joiner: "NYM-J 3x1,5", "SPAX 4,5x40", "M8\u00d740", "AC-4417(B)". Read as
+    tokens only, the comma, the multiplication sign and the bracket are a hard
+    stop, so an id the source prints character for character was flagged.
+
+    The rule: an id is grounded when its own text occurs in the source,
+    case-insensitive, and both its start and its end fall on a token boundary.
+    The boundary requirement keeps the round-2 rule: a prefix that occurs
+    inside a longer token grounds nothing.
+
+    A minus sign U+2212 and a fullwidth hyphen U+FF0D are joiners, and the
+    word joiner U+2060 and a byte-order mark U+FEFF are ignored like the
+    zero-width space U+200B, so a PDF or a mail client that swaps the hyphen
+    does not break the id.
+    """
+
+    def _assert_grounded(self, part_number, source):
+        extraction = {"items": [{"part_number": part_number}]}
+        for apply in (False, True):
+            checked, findings = G.ground(extraction, source, apply=apply)
+            self.assertEqual(findings, [], "%s apply=%s" % (part_number, apply))
+            self.assertNotIn("uncertain", checked["items"][0],
+                             "%s apply=%s" % (part_number, apply))
+
+    def test_a_cable_designation_with_a_comma_is_grounded(self):
+        self._assert_grounded("NYM-J 3x1,5",
+                              "Pos. 1: 50 m Mantelleitung NYM-J 3x1,5 grau")
+
+    def test_a_cable_designation_with_a_slash_and_a_comma_is_grounded(self):
+        self._assert_grounded("H07V-K 1x2,5",
+                              "Pos. 2: 100 m Aderleitung H07V-K 1x2,5 blau")
+
+    def test_a_fastener_designation_with_a_comma_is_grounded(self):
+        self._assert_grounded("SPAX 4,5x40",
+                              "Pos. 3: 200 St\u00fcck SPAX 4,5x40 verzinkt")
+
+    def test_a_fastener_designation_with_a_multiplication_sign_is_grounded(self):
+        self._assert_grounded("M8\u00d740",
+                              "Pos. 4: 50 St\u00fcck Sechskantschraube "
+                              "M8\u00d740 DIN 933")
+
+    def test_an_id_with_a_bracket_is_grounded(self):
+        self._assert_grounded("AC-4417(B)",
+                              "Pos. 5: 10 St\u00fcck Ventil AC-4417(B) Messing")
+
+    def test_a_minus_sign_or_a_fullwidth_hyphen_joins_an_id(self):
+        # The extraction writes the plain hyphen; the source carries the
+        # character a PDF or a fullwidth font leaves behind.
+        extraction = {"items": [{"part_number": "AC-44170"}]}
+        for joiner in ("\u2212", "\uff0d"):
+            source = "Pos. 1: 2 St\u00fcck AC%s44170 Schraube" % joiner
+            for apply in (False, True):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                self.assertEqual(findings, [], "%r apply=%s" % (joiner, apply))
+                self.assertNotIn("uncertain", checked["items"][0],
+                                 "%r apply=%s" % (joiner, apply))
+
+    def test_an_invisible_character_does_not_break_an_id(self):
+        # A word joiner or a byte-order mark inside an id is ignored, like the
+        # zero-width space that is already a joiner.
+        extraction = {"items": [{"part_number": "AC-44170"}]}
+        for char in ("\u2060", "\ufeff"):
+            source = "Pos. 1: 2 St\u00fcck AC%s44170 Schraube" % char
+            for apply in (False, True):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                self.assertEqual(findings, [], "%r apply=%s" % (char, apply))
+                self.assertNotIn("uncertain", checked["items"][0],
+                                 "%r apply=%s" % (char, apply))
+
+    def test_a_prefix_that_occurs_verbatim_inside_a_longer_token_is_flagged(self):
+        # The verbatim rule needs both ends on a token boundary: the source
+        # writes "3x1,55", not "3x1,5".
+        extraction = {"items": [{"part_number": "NYM-J 3x1,5"}]}
+        for apply in (False, True):
+            checked, findings = G.ground(
+                extraction, "Pos. 1: 50 m Mantelleitung NYM-J 3x1,55 grau",
+                apply=apply)
+            self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"],
+                             "apply=%s" % apply)
+            self.assertEqual(findings[0]["old_value"], "NYM-J 3x1,5")
+
+
 class GermanTextAlignmentTest(unittest.TestCase):
     """B1: a character that upper-cases to two characters must not shift ids.
 

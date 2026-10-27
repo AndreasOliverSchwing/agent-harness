@@ -228,6 +228,20 @@ below is one card of that round.
   so a 50 KB path gave 100,209 characters. Both now pass every quoted value
   through `_quote`, so each stops at 200 characters with `…`. `old_value` and
   `new_value` still carry the full value. Documented in `SPEC-REFERENCE.md`.
+- **An id that occurs verbatim is grounded, whatever punctuation it holds
+  (S7′).** The token index made every character that is not alphanumeric, not a
+  joiner and not whitespace a hard stop, so an id the source printed character
+  for character was flagged: `NYM-J 3x1,5`, `H07V-K 1x2,5`, `SPAX 4,5x40`,
+  `M8×40` and `AC-4417(B)` all raised `UNGROUNDED_ID`. An id is now also
+  grounded when its own text occurs in the source, case-insensitive, with both
+  its start and its end on a token boundary, so `NYM-J 3x1,5` is grounded and
+  the same value is still flagged against `NYM-J 3x1,55`. The minus sign U+2212
+  and the fullwidth hyphen U+FF0D are joiners now, and the word joiner U+2060
+  and a byte-order mark U+FEFF are ignored like U+200B, so a PDF or a mail
+  client that swaps the hyphen does not break an id. The round-2 rule is
+  unchanged: `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`. Both modes
+  are tested. Documented in `SPEC-REFERENCE.md`, `README.md`, the module
+  docstring and `_id_occurs_verbatim()`.
 
 ### Fixed in the second review round
 

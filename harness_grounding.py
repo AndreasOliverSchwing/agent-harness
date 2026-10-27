@@ -102,9 +102,10 @@ Nothing else.
 Codes and actions in this module:
 
     UNGROUNDED_ID / "flagged"    an item id does not occur in the source text
-                                 on a token boundary. field is the key,
-                                 old_value the id. The item stays; uncertain is
-                                 set True.
+                                 on a token boundary. An id that occurs
+                                 verbatim, whatever punctuation it holds, is
+                                 grounded. field is the key, old_value the id.
+                                 The item stays; uncertain is set True.
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
                                  extraction. A digit run counts as a GTIN only
                                  when its line names one (GTIN, EAN, UPC,
@@ -277,7 +278,13 @@ MIN_VARIANT_ID_LEN = 5
 # figure dash U+2012, en dash U+2013, em dash U+2014, horizontal bar U+2015,
 # soft hyphen U+00AD or zero-width space U+200B. All of them are separators
 # here, so the same id written with one of them stays the same id.
-_ID_JOINERS = "-./_\u2010\u2011\u2012\u2013\u2014\u2015\u00ad\u200b"
+#
+# Four more characters are separators for the same reason: a PDF writes the
+# minus sign U+2212 or the fullwidth hyphen U+FF0D where the id has a hyphen,
+# and a mail client leaves the invisible word joiner U+2060 or a byte-order
+# mark U+FEFF inside an id. A character that is invisible cannot end a token.
+_ID_JOINERS = ("-./_\u2010\u2011\u2012\u2013\u2014\u2015\u00ad\u200b"
+               "\u2212\uff0d\u2060\ufeff")
 _ID_JOINER_SET = frozenset(_ID_JOINERS)
 
 # Whitespace plus every joiner above. re.escape keeps "-" literal inside the
@@ -724,6 +731,47 @@ def _id_span_is_clean(start, end, hard, glue):
     return True
 
 
+def _is_id_char(char):
+    """True when char belongs to an id: a letter, a digit or a joiner."""
+    return bool(char) and (char.isalnum() or char in _ID_JOINER_SET)
+
+
+def _id_occurs_verbatim(value, folded_source):
+    """True when value's own text occurs in folded_source on a token boundary.
+
+    This is the second way an id is grounded, and it is what a German cable or
+    fastener designation needs. "NYM-J 3x1,5", "H07V-K 1x2,5", "SPAX 4,5x40",
+    "M8\u00d740" and "AC-4417(B)" hold characters that are not joiners, so the
+    flat form of the value runs through them and the token rule alone flagged an
+    id that the source prints character for character.
+
+    The rule is the token rule, read on the text as it is written: the id must
+    occur case-insensitively, and neither end may sit next to a letter, a digit
+    or a joiner. So "NYM-J 3x1,5" is not grounded by "NYM-J 3x1,55" (the
+    character after the match is a digit), and the round-2 rule still holds:
+    "AC-44178" is not grounded by "Pos. 3: AC-4417, 8 St\u00fcck", because that
+    text is not there at all.
+
+    folded_source is the source text casefolded once by the caller, so the cost
+    is one str.find per occurrence, linear in the length of the source.
+    """
+    if not isinstance(value, str):
+        value = str(value) if value is not None else ""
+    needle = value.casefold()
+    if not needle:
+        return False
+    size = len(needle)
+    start = folded_source.find(needle)
+    while start != -1:
+        end = start + size
+        before = folded_source[start - 1] if start else ""
+        after = folded_source[end] if end < len(folded_source) else ""
+        if not _is_id_char(before) and not _is_id_char(after):
+            return True
+        start = folded_source.find(needle, start + 1)
+    return False
+
+
 def find_links(text):
     """Return the http(s) links in text, in order of appearance, without repeats.
 
@@ -911,9 +959,14 @@ def _check_ids(items, origins, source_text):
     ends the token, so "AC-44178" is not grounded by "Pos. 3: AC-4417, 8 Stück".
     A joiner between two digits ties them into one number, so "1026" is not
     grounded by "2026-10-26".
+
+    An id that occurs verbatim is grounded too, whatever punctuation it holds:
+    "NYM-J 3x1,5", "SPAX 4,5x40" and "AC-4417(B)" are what a German supplier
+    prints, and the token rule alone flagged them. See _id_occurs_verbatim.
     """
     findings = []
     flat_source, boundary, hard, glue = _source_id_index(source_text)
+    folded_source = source_text.casefold()
     source_gtins14 = set()
     for gtin in find_gtins(source_text):
         form = gtin14(gtin)
@@ -933,6 +986,8 @@ def _check_ids(items, origins, source_text):
             flat = _id_form(raw)
             if len(flat) < MIN_ID_LEN or _id_occurs(
                     flat, flat_source, boundary, hard, glue):
+                continue
+            if _id_occurs_verbatim(raw, folded_source):
                 continue
             item["uncertain"] = True
             findings.append(_finding(
