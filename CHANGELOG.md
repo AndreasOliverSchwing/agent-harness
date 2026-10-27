@@ -251,6 +251,20 @@ below is one card of that round.
   spellings name the run that follows them. `EAN-Code:` and `EAN-Nummer:` stay
   out of scope: the docs never claimed them. Both modes are tested. Documented
   in `SPEC-REFERENCE.md`, `README.md` and `_gtin_candidates()`.
+- **A GTIN never goes to its neighbour (S9′).** Two regressions from the S6
+  fix, both about a GTIN that lands on the wrong item. (a) A bare GTIN line was
+  always read together with the line above it, so in a list that prints the
+  GTIN above its own position line the next position's number went to the item
+  above: `EAN: G1 / AC-44170 … / EAN: G2 / NW-22010 …` put G2 on AC-44170. A
+  bare GTIN line now takes the line above only when the line below names no
+  item, so both numbers are reported and nothing is written. (b) Any part
+  number on the line won, even one mentioned in passing:
+  `Pos. 2: Dichtungssatz passend für AC-44170, …, EAN G2` gave G2 to AC-44170.
+  When the line holds one item's part number and exactly one OTHER item's
+  description words, the line is ambiguous and the GTIN is reported. Both parts
+  are tested in both modes. Documented in `SPEC-REFERENCE.md`, `README.md` and
+  the `_check_missing_gtins()`, `_gtin_owner()` and `_names_an_item()`
+  docstrings.
 
 ### Fixed in the second review round
 

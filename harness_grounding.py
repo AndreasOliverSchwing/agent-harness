@@ -1641,13 +1641,21 @@ def _check_missing_gtins(items, origins, source_text, apply):
     The target item is the one the GTIN's line names. The part number on the
     line decides first, on a token boundary: a supplier line carries the part
     number of the product it prices, and two siblings can share every
-    description word.
+    description word. A part number that the line only mentions in passing does
+    not decide: when the line holds one item's part number and exactly one
+    OTHER item's description words, the line is ambiguous and the GTIN is
+    reported (S9').
 
     When the line names no part number, the description decides, and only when
     exactly one item matches. Generic words do not count: "part" occurs in half
     the descriptions and in half the source lines, so an overlap on it alone
     must not move a GTIN to another product. A tie, or no match at all, is
     reported with item_index None and nothing is written.
+
+    A bare GTIN line is read with the line above it only when the line below it
+    names no item. In a list that prints the GTIN above its own position line,
+    the line above belongs to the previous position, and borrowing it gave the
+    next position's number to the wrong item (S9').
 
     An item this module appended is never a target: its fields come from a bare
     link, so it states no product that a GTIN could belong to.
@@ -1677,13 +1685,28 @@ def _check_missing_gtins(items, origins, source_text, apply):
     facts = {}
     owners = {}
     quotes = {}
+    named_below = {}
     attached = set()
     for gtin, line_index, bare in candidates:
         form = gtin14(gtin)
         if form in carried:
             continue
         line = lines[line_index].strip()
-        previous = lines[line_index - 1].strip() if line_index and bare else ""
+        previous = ""
+        if line_index and bare:
+            # A bare GTIN line takes the line above it only when the line below
+            # names no item. A list that prints the GTIN above its own position
+            # line otherwise gave the next position's number to the item above
+            # it (S9').
+            names = named_below.get(line_index)
+            if names is None:
+                below = (lines[line_index + 1].strip()
+                         if line_index + 1 < len(lines) else "")
+                names = bool(below) and _names_an_item(
+                    items, origins, below, facts, item_words)
+                named_below[line_index] = names
+            if not names:
+                previous = lines[line_index - 1].strip()
         if line_index not in quotes:
             quotes[line_index] = _quote(line)
         key = (line_index, bare)
@@ -1816,10 +1839,16 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
     field that separates two siblings whose descriptions read alike, and it is
     what the supplier prints next to the GTIN.
 
+    A part number mentioned in passing does not decide on its own. When the
+    line holds the part number of exactly one item but the description words of
+    exactly one OTHER item, the line is ambiguous: "Dichtungssatz passend fuer
+    AC-44170" prints AC-44170 as the product the gasket fits, not as the
+    product on the line. Nothing is written for an ambiguous line (S9').
+
     A bare GTIN line (keyword and number, nothing else) names no product of its
     own: the supplier prints it under the position it belongs to. Such a line is
     read together with the line directly above it, which the caller passes as
-    match_line.
+    match_line, and only when the line below names no item.
 
     When neither line names a part number, the description decides, but only
     when exactly one item reaches MATCH_RATIO. A tie, or no match at all, is
@@ -1833,7 +1862,27 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
     tokenised once, not once per number.
     """
     flat, boundary, hard, glue, line_words = _line_tokens(facts, match_line)
-    by_part = []
+    by_part = _items_by_part(items, origins, flat, boundary, hard, glue)
+    by_words = _items_by_words(items, origins, item_words, line_words)
+    if len(by_part) == 1:
+        if len(by_words) == 1 and by_words[0] != by_part[0]:
+            return None, ("the line names the part number of one item and the "
+                          "description of another, so the product is ambiguous")
+        return by_part[0], "the line names that item's part number"
+    if len(by_part) > 1:
+        return None, ("the line names the part number of %d items, so the "
+                      "product is ambiguous" % len(by_part))
+    if len(by_words) == 1:
+        return by_words[0], "exactly one description matches the line"
+    if len(by_words) > 1:
+        return None, ("%d descriptions match the line, so the product is "
+                      "ambiguous" % len(by_words))
+    return None, "the line names no item of the extraction"
+
+
+def _items_by_part(items, origins, flat, boundary, hard, glue):
+    """Return the items whose part number the line holds on a token boundary."""
+    found = []
     for index, item in enumerate(items):
         if not isinstance(item, dict) or origins[index] is None:
             continue
@@ -1841,21 +1890,30 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
         if len(form) < MIN_ID_LEN:
             continue
         if _id_occurs(form, flat, boundary, hard, glue):
-            by_part.append(index)
-    if len(by_part) == 1:
-        return by_part[0], "the line names that item's part number"
-    if len(by_part) > 1:
-        return None, ("the line names the part number of %d items, so the "
-                      "product is ambiguous" % len(by_part))
-    by_words = [index for index, item in enumerate(items)
-                if isinstance(item, dict) and origins[index] is not None
-                and _overlap(item_words[index], line_words) >= MATCH_RATIO]
-    if len(by_words) == 1:
-        return by_words[0], "exactly one description matches the line"
-    if len(by_words) > 1:
-        return None, ("%d descriptions match the line, so the product is "
-                      "ambiguous" % len(by_words))
-    return None, "the line names no item of the extraction"
+            found.append(index)
+    return found
+
+
+def _items_by_words(items, origins, item_words, line_words):
+    """Return the items whose description reaches MATCH_RATIO on the line."""
+    return [index for index, item in enumerate(items)
+            if isinstance(item, dict) and origins[index] is not None
+            and _overlap(item_words[index], line_words) >= MATCH_RATIO]
+
+
+def _names_an_item(items, origins, text, facts, item_words):
+    """True when text names at least one item of the extraction.
+
+    A line names an item when it holds the item's part number on a token
+    boundary, or when the item's description words reach MATCH_RATIO. This is
+    the question a bare GTIN line asks about the line below it: a line that
+    names an item of its own owns the GTIN, so the number must not be borrowed
+    by the line above (S9').
+    """
+    flat, boundary, hard, glue, line_words = _line_tokens(facts, text)
+    if _items_by_part(items, origins, flat, boundary, hard, glue):
+        return True
+    return bool(_items_by_words(items, origins, item_words, line_words))
 
 
 # ── link helpers ───────────────────────────────────────────────────────────

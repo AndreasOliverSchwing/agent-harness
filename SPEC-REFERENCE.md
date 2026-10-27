@@ -252,10 +252,17 @@ Both GTIN checks compare the padded form:
 
 `MISSING_GTIN` writes only to the item the GTIN's line names. The part number
 decides first, on a token boundary: a supplier line prints the part number of
-the product it prices, and two siblings can share every description word.
+the product it prices, and two siblings can share every description word. A
+part number the line only mentions in passing does not decide: when the line
+holds one item's part number and exactly one OTHER item's description words,
+the line is ambiguous and the GTIN is reported (`Dichtungssatz passend für
+AC-44170` names the gasket, not AC-44170).
 
 - A bare GTIN line (keyword and number, nothing else) is read with the line
-  directly above it, because a supplier prints it under the position.
+  directly above it, because a supplier prints it under the position. It takes
+  that line only when the line below it names no item: in a list that prints
+  the GTIN above its own position line, the line above belongs to the previous
+  position.
 - When no part number stands on the line, the description decides, and only
   when exactly one item reaches the match ratio.
 - A tie, or no match at all, is reported with `item_index` null. Nothing is

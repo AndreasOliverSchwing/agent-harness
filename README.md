@@ -236,7 +236,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | Code | What it catches | What it does |
 |---|---|---|
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
-| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A tie or no match is reported with no item (`reported`, in both modes) |
+| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, unless the line's description words match exactly one other item, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A tie or no match is reported with no item (`reported`, in both modes) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); the comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, with the source's quantity and unit); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
@@ -374,11 +374,14 @@ name", not as a recall rate on real extractor output.
   looks, so a bare run proves nothing. A supplier that prints a GTIN with no
   keyword gets no attachment.
 - **A GTIN goes to the item its line names.** The part number on the GTIN's
-  line decides, on a token boundary. A bare GTIN line is read with the line
-  above it. When no part number stands on the line, the description decides,
-  and only when exactly one item matches. A tie, or no match at all, is
-  reported with no item, and so is every GTIN for an item this module appended.
-  One item in the extraction is not a reason to attach.
+  line decides, on a token boundary, but a part number the line only mentions in
+  passing does not decide: when the line holds one item's part number and
+  exactly one other item's description words, the line is ambiguous and the GTIN
+  is reported. A bare GTIN line is read with the line above it only when the
+  line below names no item. When no part number stands on the line, the
+  description decides, and only when exactly one item matches. A tie, or no
+  match at all, is reported with no item, and so is every GTIN for an item this
+  module appended. One item in the extraction is not a reason to attach.
 - **A GTIN is one number space.** GTIN-8, -12, -13 and -14 are compared as the
   GTIN-14 (zero-padded) form, so `200000000004` and `0200000000004` are the same
   GTIN: it is grounded, and it is not attached twice. A number an item already

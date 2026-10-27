@@ -887,6 +887,107 @@ class GtinNumberLabelTest(unittest.TestCase):
         self._assert_label_names_the_gtin("Barcode Nr.")
 
 
+class GtinNeighbourTest(unittest.TestCase):
+    """S9' (fix round 3): a GTIN never goes to its neighbour.
+
+    Two regressions from the S6 fix, both about a GTIN that lands on the wrong
+    item:
+
+    (a) A bare GTIN line was always read together with the line above it. In a
+        list that prints the GTIN above its position line, the number of the
+        NEXT position went to the item above: `EAN: G2` after AC-44170's line
+        became AC-44170's second GTIN, although the line below it names
+        NW-22010. A bare GTIN line now takes the line above only when the line
+        below names no item.
+
+    (b) Any part number on the line won, even one mentioned in passing. On
+        `Pos. 2: Dichtungssatz passend für AC-44170, ... EAN G2` the part number
+        points at AC-44170 but every description word belongs to the
+        Dichtungssatz item. When the line's part number points at one item and
+        its description words match exactly one other item, the line is
+        ambiguous and the GTIN is reported.
+
+    Both parts are tested in both modes: a reported GTIN writes nothing, so the
+    finding and the extraction must be the same with and without apply=True.
+    """
+
+    # (a) The GTIN stands above its own position line.
+    ABOVE_ITEMS = {"items": [
+        {"part_number": "AC-44170", "description": "Sechskantschraube M8"},
+        {"part_number": "NW-22010", "description": "Kabelbinder 200 mm"},
+    ]}
+    ABOVE_SOURCE = ("EAN: 2000000000015\n"
+                    "AC-44170 Sechskantschraube M8, 8 St\u00fcck\n"
+                    "EAN: 2000000000022\n"
+                    "NW-22010 Kabelbinder 200 mm, 4 St\u00fcck")
+
+    # (b) The part number is mentioned in passing, the description is another
+    # item's.
+    PASSING_ITEMS = {"items": [
+        {"part_number": "AC-44170", "description": "Druckminderer 1/2 Zoll",
+         "gtin": "2000000000015"},
+        {"description": "Dichtungssatz"},
+    ]}
+    PASSING_SOURCE = ("Pos. 1: AC-44170 Druckminderer 1/2 Zoll, 1 St\u00fcck, "
+                      "EAN 2000000000015\n"
+                      "Pos. 2: Dichtungssatz passend f\u00fcr AC-44170, 2 "
+                      "St\u00fcck, EAN 2000000000022")
+
+    def test_a_bare_gtin_line_below_an_item_line_belongs_to_no_neighbour(self):
+        for apply in (False, True):
+            checked, findings = G.ground(self.ABOVE_ITEMS, self.ABOVE_SOURCE,
+                                         apply=apply)
+            self.assertEqual([f["code"] for f in findings],
+                             ["MISSING_GTIN", "MISSING_GTIN"], "apply=%s" % apply)
+            self.assertEqual([f["action"] for f in findings],
+                             ["reported", "reported"], "apply=%s" % apply)
+            self.assertEqual([f["item_index"] for f in findings], [None, None],
+                             "apply=%s" % apply)
+            self.assertEqual([f["new_value"] for f in findings], [None, None],
+                             "apply=%s" % apply)
+            self.assertIn("2000000000015", findings[0]["evidence"])
+            self.assertIn("2000000000022", findings[1]["evidence"])
+            self.assertNotIn("gtin", checked["items"][0], "apply=%s" % apply)
+            self.assertNotIn("gtin", checked["items"][1], "apply=%s" % apply)
+
+    def test_a_gtin_on_a_line_that_describes_another_item_is_reported(self):
+        for apply in (False, True):
+            checked, findings = G.ground(self.PASSING_ITEMS, self.PASSING_SOURCE,
+                                         apply=apply)
+            self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"],
+                             "apply=%s" % apply)
+            finding = findings[0]
+            self.assertEqual(finding["action"], "reported", "apply=%s" % apply)
+            self.assertIsNone(finding["item_index"], "apply=%s" % apply)
+            self.assertIsNone(finding["new_value"], "apply=%s" % apply)
+            self.assertIn("2000000000022", finding["evidence"])
+            self.assertNotIn("other_ids", checked["items"][0],
+                             "apply=%s" % apply)
+            self.assertEqual(checked["items"][0]["gtin"], "2000000000015",
+                             "apply=%s" % apply)
+            self.assertNotIn("gtin", checked["items"][1],
+                             "apply=%s" % apply)
+
+    def test_the_line_above_a_bare_gtin_line_still_works_when_nothing_follows(self):
+        # The quantity-below-a-GTIN layout: the bare GTIN line is the last line
+        # of the position, so the line above it still names the item.
+        source = ("AC-44170 Sechskantschraube M8, 8 St\u00fcck\n"
+                  "EAN: 2000000000015")
+        items = {"items": [{"part_number": "AC-44170",
+                            "description": "Sechskantschraube M8"}]}
+        for apply in (False, True):
+            checked, findings = G.ground(items, source, apply=apply)
+            self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"],
+                             "apply=%s" % apply)
+            self.assertEqual(findings[0]["item_index"], 0, "apply=%s" % apply)
+            if apply:
+                self.assertEqual(checked["items"][0]["gtin"],
+                                 "2000000000015")
+            else:
+                self.assertEqual(findings[0]["action"], "suggested")
+                self.assertNotIn("gtin", checked["items"][0])
+
+
 class GtinLeadingZerosTest(unittest.TestCase):
     """A GTIN is one number space, not four (QA 7).
 
