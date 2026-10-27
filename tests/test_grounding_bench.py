@@ -17,7 +17,9 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -229,6 +231,166 @@ class RedactedLinkCasesTest(unittest.TestCase):
         self.assertEqual([f["action"] for f in findings],
                          ["restored", "restored"])
         self.assertEqual([f["item_index"] for f in findings], [0, 1])
+
+
+class DocFiguresTest(unittest.TestCase):
+    """Every benchmark figure in the docs must be the figure the bench prints.
+
+    The bench is run in a temp copy, so the test never writes into the repo and
+    the numbers come from an actual run, not from an import of the runner.
+    """
+
+    NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                    6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        bench = os.path.join(self.tmp, "bench", "grounding")
+        os.makedirs(bench)
+        shutil.copy(os.path.join(REPO, "harness_grounding.py"), self.tmp)
+        for name in ("run.py", "cases.json"):
+            shutil.copy(os.path.join(REPO, "bench", "grounding", name),
+                        os.path.join(bench, name))
+        proc = subprocess.run([sys.executable, "run.py"], cwd=bench,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        with open(os.path.join(bench, "RESULTS.md")) as handle:
+            self.generated = handle.read()
+        with open(os.path.join(REPO, "bench", "grounding", "RESULTS.md")) as handle:
+            self.committed = handle.read()
+        with open(os.path.join(REPO, "README.md")) as handle:
+            self.readme = handle.read()
+        with open(os.path.join(REPO, "CHANGELOG.md")) as handle:
+            self.changelog = handle.read()
+
+    def _rows(self, text):
+        """Return the score table as (type, n, caught, corrected) tuples."""
+        rows = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line.startswith("|"):
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if len(cells) != 4 or cells[0] in ("error type", "---"):
+                continue
+            if not cells[1].isdigit():
+                continue
+            kind = cells[0].replace("`", "").replace(" (control)", "")
+            rows.append((kind, int(cells[1]), cells[2], int(cells[3])))
+        return rows
+
+    def _figures(self):
+        rows = self._rows(self.generated)
+        self.assertTrue(rows, "the generated RESULTS.md has no table")
+        clean = [row for row in rows if row[0] == "clean"]
+        self.assertEqual(len(clean), 1, "RESULTS.md needs one clean control row")
+        clean_n = clean[0][1]
+        injected_rows = [row for row in rows if row[0] != "clean"]
+        injected = sum(row[1] for row in injected_rows)
+        total = injected + clean_n
+        caught = sum(int(row[2]) for row in injected_rows)
+        corrected = sum(row[3] for row in injected_rows)
+        corrected_total = corrected + clean[0][3]
+        false_alarms = re.search(
+            r"False alarms: (\d+) of (\d+) error-free cases produced a finding",
+            self.generated)
+        self.assertIsNotNone(false_alarms, "RESULTS.md has no false-alarm line")
+        return {
+            "rows": rows,
+            "types": len(injected_rows),
+            "clean": clean_n,
+            "injected": injected,
+            "total": total,
+            "caught": caught,
+            "corrected": corrected,
+            "corrected_total": corrected_total,
+            "false_alarms": int(false_alarms.group(1)),
+            "false_alarm_base": int(false_alarms.group(2)),
+        }
+
+    @staticmethod
+    def _flat(text):
+        """Collapse markdown line wrapping so a sentence matches anywhere."""
+        return re.sub(r"\s+", " ", text)
+
+    def _sentences(self, doc):
+        """Return every figure sentence in doc as (name, groups)."""
+        found = []
+        patterns = (
+            ("caught", r"(\d+) of (\d+) injected errors produced a finding "
+                       r"with the expected code on the expected item\."),
+            ("false alarms", r"(\d+) of (\d+) error-free controls produced "
+                             r"any finding\."),
+            ("corrected", r"(\d+) of (\d+) injected errors reached the gold "
+                          r"extraction exactly; (\d+) of (\d+) cases did, "
+                          r"counting the controls\."),
+        )
+        for name, pattern in patterns:
+            for match in re.finditer(pattern, self._flat(doc)):
+                found.append((name, tuple(int(group)
+                                          for group in match.groups())))
+        return found
+
+    def test_the_committed_results_file_is_what_the_bench_generates(self):
+        self.assertEqual(self.committed, self.generated)
+
+    def test_the_readme_table_equals_the_generated_table(self):
+        figures = self._figures()
+        self.assertEqual(self._rows(self.readme), figures["rows"])
+
+    def test_every_figure_sentence_in_the_docs_is_true(self):
+        figures = self._figures()
+        expected = {
+            "caught": (figures["caught"], figures["injected"]),
+            "false alarms": (figures["false_alarms"], figures["clean"]),
+            "corrected": (figures["corrected"], figures["injected"],
+                          figures["corrected_total"], figures["total"]),
+        }
+        for name, doc in (("README.md", self.readme),
+                          ("CHANGELOG.md", self.changelog)):
+            sentences = self._sentences(doc)
+            for kind in expected:
+                self.assertIn(kind, [kind for kind, _groups in sentences],
+                              "%s states no %s figure" % (name, kind))
+            for kind, groups in sentences:
+                self.assertEqual(groups, expected[kind],
+                                 "%s: %s figure %r != %r"
+                                 % (name, kind, groups, expected[kind]))
+
+    def test_the_readme_states_how_many_cases_are_errors_and_controls(self):
+        figures = self._figures()
+        pattern = (r"holds (\d+) invented order requests: (\d+) injected "
+                   r"errors across (\w+) error types, four to six cases each, "
+                   r"plus (\d+) error-free controls\.")
+        match = re.search(pattern, self._flat(self.readme))
+        self.assertIsNotNone(match, "README.md does not state the case counts")
+        self.assertEqual(
+            (int(match.group(1)), int(match.group(2)), match.group(3),
+             int(match.group(4))),
+            (figures["total"], figures["injected"],
+             self.NUMBER_WORDS[figures["types"]], figures["clean"]))
+
+    def test_the_changelog_states_how_many_cases_are_errors_and_controls(self):
+        figures = self._figures()
+        pattern = (r"The set now holds (\d+) cases — (\d+) injected errors "
+                   r"across (\w+) error types plus (\d+) error-free controls")
+        match = re.search(pattern, self._flat(self.changelog))
+        self.assertIsNotNone(match, "CHANGELOG.md does not state the case counts")
+        self.assertEqual(
+            (int(match.group(1)), int(match.group(2)), match.group(3),
+             int(match.group(4))),
+            (figures["total"], figures["injected"],
+             self.NUMBER_WORDS[figures["types"]], figures["clean"]))
+
+    def test_the_readme_says_how_many_injected_errors_cannot_reach_gold(self):
+        figures = self._figures()
+        match = re.search(r"The other (\d+) injected errors cannot, by design",
+                          self._flat(self.readme))
+        self.assertIsNotNone(match, "README.md does not count the uncorrected")
+        self.assertEqual(int(match.group(1)),
+                         figures["injected"] - figures["corrected"])
 
 
 class CasePrivacyTest(unittest.TestCase):

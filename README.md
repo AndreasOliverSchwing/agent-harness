@@ -211,28 +211,32 @@ keeps its own and the other value is named in the finding (`old_value`) with
 
 ### Synthetic benchmark
 
-`bench/grounding/` holds 30 invented order requests: six error types, four to six
-cases each, plus four error-free controls. `python3 bench/grounding/run.py` scores
-them and rewrites `RESULTS.md`.
+`bench/grounding/` holds 34 invented order requests: 30 injected errors across
+six error types, four to six cases each, plus 4 error-free controls.
+`python3 bench/grounding/run.py` scores them and rewrites `RESULTS.md`.
 
 | error type | n | caught | corrected |
 |---|---|---|---|
 | `variant_split` | 4 | 4 | 4 |
 | `invented_part_number` | 6 | 6 | 0 |
+| `redacted_link` | 4 | 4 | 4 |
 | `missed_link` | 6 | 6 | 0 |
 | `set_multiplied` | 4 | 4 | 4 |
 | `omit_gtin` | 6 | 6 | 6 |
 | clean (control) | 4 | — | 4 |
 
+`caught` means a finding with the expected code **on the item the case names**.
+`corrected` means the checked output equals `gold` once `uncertain` and `note`
+are removed. `tests/test_grounding_bench.py` runs the bench in a temp copy and
+fails when the table or the sentences below drift from what it produces.
+
 **These numbers are synthetic.** A person wrote the cases to exercise the checks,
 and injected the errors by design. Read them as "the checks fire on the error they
 name", not as a recall rate on real extractor output.
 
-- 30 of 30 injected errors produced a finding with the expected code.
-- 0 of 4 error-free cases produced any finding.
-- 14 of 30 reached the gold extraction exactly. The other 16 cannot, by design:
-  `UNGROUNDED_ID` flags instead of repairing, and `UNCOVERED_LINK` appends a
-  placeholder instead of restoring the link on the existing item.
+- 30 of 30 injected errors produced a finding with the expected code on the expected item.
+- 0 of 4 error-free controls produced any finding.
+- 18 of 30 injected errors reached the gold extraction exactly; 22 of 34 cases did, counting the controls. The other 12 injected errors cannot, by design: `UNGROUNDED_ID` flags instead of repairing, and `UNCOVERED_LINK` appends a placeholder instead of restoring the link on the existing item.
 
 ### Limits
 
@@ -304,7 +308,7 @@ harness_lint.py     the checker — no LLM, no network, seconds to run
 harness_grounding.py  the grounding checks — is the data true to its source?
 specs/              example specs, genericised from a private system
 examples/           conforming artifacts, plus a runnable grounding example
-bench/grounding/    30 synthetic cases and the scoring runner behind RESULTS.md
+bench/grounding/    34 synthetic cases and the scoring runner behind RESULTS.md
 tests/              unittest suite — run with: python3 -m unittest discover -s tests
 scripts/            secret scan (tree + full history) + hook installer
 SPEC-REFERENCE.md   every front-matter key and what it does

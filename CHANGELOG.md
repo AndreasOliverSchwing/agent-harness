@@ -27,6 +27,16 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `README.md` and `SPEC-REFERENCE.md`.
 
 ### Fixed
+- **The benchmark figures are measured, not typed.** `bench/grounding/` had no
+  `REDACTED_LINK` case, and a catch was scored on the finding code alone, so a
+  flag on the wrong item counted. The set now holds 34 cases — 30 injected
+  errors across six error types plus 4 error-free controls — and a catch needs
+  the expected code on the item the case names (`expect_item`). A test runs the
+  bench in a temp copy and fails when `README.md` or this file quotes a figure
+  the bench does not produce. 30 of 30 injected errors produced a finding with
+  the expected code on the expected item. 0 of 4 error-free controls produced
+  any finding. 18 of 30 injected errors reached the gold extraction exactly;
+  22 of 34 cases did, counting the controls.
 - The quantity-label regex is linear. `\s*:?\s*` split a run of spaces between
   two quantifiers, so every split was tried: 20,000 spaces after `qty` took
   2.9 s. The colon now sits inside one optional group. The pack-marker patterns
@@ -115,12 +125,11 @@ the source does not support.
   rewrites a value into something the source does not prove: an unsupported part
   number is flagged and marked `uncertain`, not repaired, because the source does
   not say what the right value is.
-- `bench/grounding/` — 30 synthetic order requests across the six error types plus
-  four error-free controls, a scoring runner and a generated `RESULTS.md`. Measured:
-  30 of 30 injected errors caught, 0 of 4 false alarms, 14 of 30 corrected to gold.
-  The 16 uncorrected cases cannot reach gold by design (`UNGROUNDED_ID` flags
-  instead of repairing; `UNCOVERED_LINK` appends a placeholder). The benchmark
-  reports; it does not gate CI.
+- `bench/grounding/` — synthetic order requests across the six error types plus
+  error-free controls, a scoring runner and a generated `RESULTS.md`. The
+  figures live in `RESULTS.md` and `README.md`, and a test asserts that both
+  match what the runner produces; they move whenever a case is added. The
+  benchmark reports; it does not gate CI.
 - `examples/grounding_example.py` — one invented order request, three findings,
   runnable with no configuration.
 - README section on the grounding checks, with the six checks, the synthetic
