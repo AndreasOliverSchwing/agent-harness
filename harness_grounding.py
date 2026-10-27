@@ -1287,6 +1287,10 @@ def _check_set_multiplied(items, origins, source_text, apply):
     another product's line is another product's pack, so a missed correction is
     the safe answer.
 
+    An item on the set line keeps the line even when its quantity does not
+    parse. Such an item has nothing this check can correct, and it is the
+    item the set line belongs to, so no other item takes the line.
+
     The lines are walked once, not once per set line. Each set line offers the
     items its owner line grounds, and the earliest set line that fits an item's
     quantity corrects it. A mail with a thousand positions stays linear, which
@@ -1322,7 +1326,18 @@ def _check_set_multiplied(items, origins, source_text, apply):
         [index for index in line
          if origins[index] is not None and _quantity_of(items[index]) is not None]
         for line in grounded]
-    owner_line = _set_owner_lines(by_line, correctable, has_set, len(bodies))
+    # A line that grounds an item whose quantity field is non-empty but does
+    # not parse is that item's own line. The set line belongs to it, and no
+    # other item may take the line: the owner's quantity cannot be read, so the
+    # set line has nothing to correct.
+    unreadable = [
+        [index for index in line
+         if origins[index] is not None
+         and not _quantity_field_is_empty(items[index])
+         and _quantity_of(items[index]) is None]
+        for line in grounded]
+    owner_line = _set_owner_lines(by_line, correctable, unreadable, has_set,
+                                 len(bodies))
     for line_index in sorted(by_line):
         owner = owner_line.get(line_index)
         if owner is None:
@@ -2278,7 +2293,7 @@ def _source_lines(text):
     return bodies, starts
 
 
-def _set_owner_lines(by_line, grounded, has_set, line_count):
+def _set_owner_lines(by_line, grounded, unreadable, has_set, line_count):
     """Return {set-line index: owner-line index} for the set check.
 
     A set line belongs to the items grounded on its own line. When its own line
@@ -2294,9 +2309,18 @@ def _set_owner_lines(by_line, grounded, has_set, line_count):
 
     A line that grounds no item at all is never an owner, so a set line next to
     nothing is dropped instead of reaching across the mail.
+
+    A set line whose own line grounds an item with a quantity this module
+    cannot read has an owner, that item, and no other item may take the line.
+    The owner states a quantity, so the line is not a stray set line of the
+    stack above it.
     """
     owner = {}
     for line_index in by_line:
+        if unreadable[line_index]:
+            # The item on the set line states a quantity that does not parse.
+            # The set line is that item's line, so it takes no other owner.
+            continue
         # Own line first, then the line above. Never the line below: a stack of
         # set lines shares one owner line, which the block pass below decides.
         for candidate in (line_index, line_index - 1):
@@ -2305,8 +2329,12 @@ def _set_owner_lines(by_line, grounded, has_set, line_count):
                 break
     for first, last in _set_blocks(has_set):
         block = [index for index in range(first, last + 1) if index in by_line]
+        # A set line that sits on its own item's line keeps that line, so it
+        # takes no part in the stack's shared owner.
+        block = [index for index in block if not unreadable[index]]
         if not block:
             continue
+        first, last = block[0], block[-1]
         # A set line of the block that found an owner of its own already
         # belongs to that item. The others share the block's neighbour.
         shared = None

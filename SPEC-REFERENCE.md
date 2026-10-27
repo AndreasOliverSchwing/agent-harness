@@ -421,7 +421,10 @@ Two conditions must hold, and both must hold on one line:
    below on its own: that split one stack between two positions and rewrote a
    correct quantity on the position below. Only an item
    the extractor produced and that states a quantity can own a set line, so a
-   placeholder this module appended never takes one.
+   placeholder this module appended never takes one. A quantity the parser
+   cannot read is a stated quantity here: an item on the set line keeps the
+   line, and no other item takes it, so `"…, Menge: 4 x 2"` never rewrites the
+   position above.
    A line grounds an item when the part number occurs on it on a token
    boundary, when its GTIN is on it, when the item's link is on it, or when it
    shares at least `MATCH_RATIO` of the item's description words.

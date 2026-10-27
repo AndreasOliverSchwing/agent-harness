@@ -2489,6 +2489,30 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][1]["quantity"], 6)
         self.assertNotIn("uncertain", checked["items"][1])
 
+    def test_a_set_line_on_an_item_whose_quantity_does_not_parse_corrects_nothing(self):
+        # S2' from the 2026-10-27 second review. The set line sits on the
+        # AC-44170 line, whose quantity is "4 x 2" and does not parse. The
+        # correctable filter then let the set line fall through to the item
+        # above it, and NW-22010's correct 8 became 4 sets. The set line
+        # belongs to the item on the set line, so no other item takes it.
+        extraction = {"items": [
+            {"part_number": "NW-22010", "quantity": 8, "unit": "piece"},
+            {"part_number": "AC-44170", "quantity": "4 x 2", "unit": "piece"},
+        ]}
+        source = ("Pos. 1: NW-22010 Kabelbinder 200 mm, 2er-Pack, 8 St\u00fcck\n"
+                  "Pos. 2: AC-44170 Sechskantschraube M8, 2er-Pack, "
+                  "Menge: 4 x 2")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertEqual(checked["items"][1]["quantity"], "4 x 2")
+        checked, findings = ground_write(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertEqual(checked["items"][0]["unit"], "piece")
+        self.assertNotIn("uncertain", checked["items"][0])
+        self.assertEqual(checked["items"][1]["quantity"], "4 x 2")
+
     def test_the_evidence_names_the_unit_change(self):
         # S1: the finding says what the unit becomes, not only the number.
         extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}

@@ -428,8 +428,9 @@ name", not as a recall rate on real extractor output.
   lines whose own lines ground nothing shares one owner line, the line above the
   stack else the line below it; the line below is read once for the whole stack
   and only when no line above the stack grounds an item. A set line whose item
-  sits further away corrects nothing. A pack word only in the extractor's
-  description is never enough.
+  sits further away corrects nothing. An item on the set line keeps the line
+  even when its quantity does not parse, so no other item takes it. A pack word
+  only in the extractor's description is never enough.
   A line grounds an item by its part number, GTIN or link, or by the item's
   description words. The description is a fallback only: when the item's part
   number occurs anywhere in the source, only a line that carries that id

@@ -278,6 +278,14 @@ below is one card of that round.
   docs never claimed; it now asserts the documented rule. Documented in
   `SPEC-REFERENCE.md`, `README.md` and the `_check_set_multiplied()` and
   `_set_owner_lines()` docstrings.
+- **A set line on an item whose quantity does not parse corrects nothing
+  (S2′).** The `correctable` filter only kept items with a readable quantity, so
+  a set line that sat on its own item's line fell through to the item above it:
+  `NW-22010 …, 8 Stück / AC-44170 …, Menge: 4 x 2` rewrote NW-22010's correct 8
+  to 4 sets. A line that grounds an item with a non-empty quantity the parser
+  cannot read is now that item's line, and no other item takes it. Tested in
+  both modes. Documented in `SPEC-REFERENCE.md`, `README.md` and the
+  `_check_set_multiplied()` and `_set_owner_lines()` docstrings.
 
 ### Fixed in the second review round
 
