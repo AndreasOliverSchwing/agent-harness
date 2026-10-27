@@ -153,10 +153,14 @@ an item for a link that is not a shop's product page at all.
 A digit run of 8, 12, 13 or 14 characters with a valid GS1 check digit is a
 candidate, not a GTIN. `MISSING_GTIN` needs two more conditions:
 
-- **The line names it.** The line the run sits on must carry `GTIN`, `EAN`,
-  `UPC`, `Barcode`, `Strichcode` or `bar code` (German and English, any case).
-  `Tel. +49 89 12345670` and `Order 20261023` both pass the check digit and are
-  not GTINs. Without the keyword there is no way to tell them apart.
+- **The line names it.** The keyword `GTIN`, `EAN`, `UPC`, `Barcode`,
+  `Strichcode` or `bar code` must stand in front of the number (German and
+  English, any case). A length suffix or a `Nr.`/`No.` label may sit between
+  them: `EAN`, `EAN:`, `EAN-13:`, `EAN-Nr.:` all name the run that follows.
+  Only that run is the GTIN. Another number on the same line is not: in
+  `Bestellung 20261023, Sechskantschraube M8 AC-44170, EAN 2000000000015` the
+  only GTIN is `2000000000015`. `Tel. +49 89 12345670` and `Order 20261023`
+  pass the check digit and are not GTINs.
 - **It is not inside a link.** A 13-digit marketplace item number in a URL is a
   product position, not a GTIN. The rule is per occurrence: the same number
   outside the link on the same line still counts.

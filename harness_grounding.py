@@ -265,6 +265,22 @@ MARKETPLACE_DOMAINS = {
 _GTIN_KEYWORD = re.compile(
     r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b", re.IGNORECASE)
 
+# A GTIN named by a keyword: the keyword, then at most a length suffix
+# ("EAN-13", "EAN-8") or a "Nr."/"No." label, then the digit run. Only that run
+# is the GTIN. A line may hold other numbers before or after it, and an order
+# number or a telephone number on the same line is not a GTIN.
+#
+# The suffix must end at a separator, otherwise a GTIN that starts with "13"
+# would lose its first two digits to the suffix. The run itself must not sit
+# inside a longer digit run.
+_GTIN_VALUE = re.compile(
+    r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b"
+    r"(?:\s*[-\u2013]\s*(?:8|12|13|14|nr\.?|no\.?)(?=[\s:.])"
+    r"|\s+(?:nr\.?|no\.?)\b)?"
+    r"\s*:?\s*"
+    r"(\d{8,14})(?!\d)",
+    re.IGNORECASE)
+
 # The largest quantity this module reads, and the longest digit run it will
 # look at. A quantity is a count of pieces; 10**9 is a billion pieces and no
 # order carries that. The cap keeps numeric parsing safe on untrusted text:
@@ -1087,9 +1103,12 @@ def _gtin_candidates(source_text):
     Two rules decide what counts, and both exist because a digit run alone
     proves nothing:
 
-    - The line must carry a GTIN keyword: GTIN, EAN, UPC, Barcode, Strichcode.
-      "Tel. +49 89 12345670" and "Order 20261023" are valid check digits and
-      are not GTINs.
+    - The line must name the number with a GTIN keyword: GTIN, EAN, UPC,
+      Barcode, Strichcode, with an optional length suffix or "Nr." label. The
+      GTIN is the digit run that follows the keyword. "Tel. +49 89 12345670"
+      and "Order 20261023" are valid check digits and are not GTINs, and
+      neither is a number that sits elsewhere on a line that names a GTIN:
+      "Bestellung 20261023, ... EAN 2000000000015" names one GTIN.
     - The run must not sit inside a link. A marketplace item number in a URL
       is a product position, not a GTIN.
 
@@ -1101,11 +1120,11 @@ def _gtin_candidates(source_text):
         if not _GTIN_KEYWORD.search(line):
             continue
         spans = [match.span() for match in _URL.finditer(line)]
-        for match in _DIGIT_RUN.finditer(line):
-            run = match.group(0)
+        for match in _GTIN_VALUE.finditer(line):
+            run = match.group(1)
             if len(run) not in GTIN_LENGTHS or not gtin_valid(run):
                 continue
-            if any(start <= match.start() < end for start, end in spans):
+            if any(start <= match.start(1) < end for start, end in spans):
                 continue
             form = gtin14(run)
             if form in seen:

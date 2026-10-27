@@ -498,6 +498,43 @@ class GtinKeywordRuleTest(unittest.TestCase):
         self.assertEqual([f["action"] for f in findings], ["attached"])
         self.assertEqual(checked["items"][0]["gtin"], "4012345678901")
 
+    def test_ground_takes_only_the_digit_run_after_the_keyword(self):
+        # S5 (a) from the 2026-10-27 recheck. The order number comes first on
+        # the line and passes the check digit too. Only the run that follows
+        # "EAN" is the GTIN.
+        source = ("Bestellung 20261023, Sechskantschraube M8 AC-44170, "
+                  "EAN 2000000000015\n")
+        extraction = {"items": [{"part_number": "AC-44170",
+                                 "description": "Sechskantschraube M8",
+                                 "quantity": 4}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings], ["attached"])
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
+
+    def test_ground_does_not_take_a_phone_number_after_a_gtin_keyword(self):
+        # S5 (b): "EAN auf Anfrage" names no number. The telephone number later
+        # on the line is not the GTIN of anything.
+        source = ("AC-44170 Sechskantschraube M8, EAN auf Anfrage unter "
+                  "Tel. 089 12345670\n")
+        extraction = {"items": [{"part_number": "AC-44170",
+                                 "description": "Sechskantschraube M8",
+                                 "quantity": 4}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_ground_reads_the_common_keyword_spellings(self):
+        # S5: a supplier writes the keyword with a length suffix or "Nr.".
+        for keyword in ("EAN", "EAN:", "EAN-13:", "EAN-Nr.:"):
+            source = "Acme Tools\n4 x Widget assembly  %s 2000000000015\n" \
+                     % keyword
+            extraction = {"items": [{"description": "Widget assembly"}]}
+            checked, findings = G.ground(extraction, source)
+            self.assertEqual([f["action"] for f in findings], ["attached"],
+                             keyword)
+            self.assertEqual(checked["items"][0]["gtin"], "2000000000015",
+                             keyword)
+
     def test_ground_does_not_move_a_gtin_on_a_generic_word_alone(self):
         # Both descriptions hold "part" and the GTIN line holds "part" too. An
         # overlap on that word alone must not decide where the GTIN goes: the

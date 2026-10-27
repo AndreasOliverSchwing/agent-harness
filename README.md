@@ -196,7 +196,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | Code | What it catches | What it does |
 |---|---|---|
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
-| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The line must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode`), and a digit run inside a link never counts | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
+| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode`, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); otherwise leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
 | `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item; the evidence names the unit change |
@@ -275,10 +275,13 @@ name", not as a recall rate on real extractor output.
 - A 12-digit marketplace item number with a valid GS1 check digit is read as a
   GTIN-12. Nothing in the text distinguishes the two.
 - **A GTIN needs its keyword.** `MISSING_GTIN` attaches a digit run only when
-  its line names the number (`GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode`) and
-  the run is not inside a link. Eight digits with a valid check digit are also
-  how a phone number or an order number looks, so a bare run proves nothing.
-  A supplier that prints a GTIN with no keyword gets no attachment.
+  the keyword in front of it names the number (`GTIN`, `EAN`, `UPC`, `Barcode`,
+  `Strichcode`, with an optional `-13`/`-8` suffix or `Nr.` label) and the run
+  is not inside a link. Only the run directly after the keyword counts, so
+  another number on the same line is never taken for the GTIN. Eight digits
+  with a valid check digit are also how a phone number or an order number
+  looks, so a bare run proves nothing. A supplier that prints a GTIN with no
+  keyword gets no attachment.
 - The GTIN-to-item match uses word overlap on the description, and generic words
   do not count (`part`, `item`, `quantity`, `GTIN`, …). A short or generic
   description ("Set", "Artikel") can miss, and the finding then carries no item.
