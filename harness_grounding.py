@@ -876,6 +876,13 @@ def _check_redacted_links(items, origins, source_text):
     exactly as the extractor wrote it and the item is flagged uncertain, so a
     human checks it. A restore is also a data change, so it sets uncertain too.
 
+    The comparison is made without the query string and the fragment, on both
+    sides. A source link is stored cleaned, and an extractor keeps the
+    "?spm=..." that almost every AliExpress link carries, so a cut link that
+    still holds its query string never ended with the stored suffix. The cut is
+    looked for in the cleaned link: a "[" in a query string is not a cut in a
+    product path.
+
     A "[" inside the first MIN_REDACTED_AT characters is not a cut in the
     middle of a path and is left alone without a finding.
     """
@@ -887,12 +894,14 @@ def _check_redacted_links(items, origins, source_text):
         link = item.get("link")
         if not isinstance(link, str):
             continue
-        cut = link.find("[")
+        bare = _without_query(link)
+        cut = bare.find("[")
         if cut < MIN_REDACTED_AT:
             continue
-        prefix = link[:cut]
-        close = link.find("]", cut)
-        suffix = link[close + 1:] if close != -1 else ""
+        prefix = bare[:cut]
+        close = bare.find("]", cut)
+        suffix = bare[close + 1:] if close != -1 else ""
+        suffix = suffix.rstrip(_TRAILING_PUNCTUATION)
         matches = [candidate for candidate in links
                    if candidate.startswith(prefix) and candidate.endswith(suffix)]
 
@@ -1656,6 +1665,23 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
 
 # ── link helpers ───────────────────────────────────────────────────────────
 
+def _without_query(url):
+    """Return url without its query string and fragment.
+
+    The cut is the first "?" or "#". Both are found with str.find and the
+    smaller position wins, so the cost is linear in the length of the link and
+    a link with no query is returned unchanged.
+    """
+    if not isinstance(url, str):
+        return ""
+    cut = len(url)
+    for character in "?#":
+        position = url.find(character)
+        if position != -1 and position < cut:
+            cut = position
+    return url[:cut]
+
+
 def _clean_link(url):
     """Return url without sentence punctuation, query or fragment.
 
@@ -1669,13 +1695,7 @@ def _clean_link(url):
     """
     if not isinstance(url, str):
         return ""
-    url = url.strip().rstrip(_TRAILING_PUNCTUATION)
-    cut = len(url)
-    for character in "?#":
-        position = url.find(character)
-        if position != -1 and position < cut:
-            cut = position
-    return url[:cut]
+    return _without_query(url.strip().rstrip(_TRAILING_PUNCTUATION))
 
 
 def _to_number(value):

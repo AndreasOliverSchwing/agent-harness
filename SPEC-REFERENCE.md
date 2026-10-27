@@ -124,6 +124,12 @@ The text before the placeholder is the prefix; the text after it is the suffix. 
 module restores a source link only when **exactly one** source link starts with the
 prefix **and** ends with the suffix.
 
+Both sides are compared without the query string and the fragment. A source link is
+stored cleaned, and an extractor keeps the `?spm=…` that almost every AliExpress link
+carries, so a cut link that still holds its query string is compared as
+`https://de.aliexpress.com/item/1[Telefon]234567`. A `[` inside a query string is not
+a cut in a product path and raises no finding.
+
 - Exactly one match: the link is written back and the item gets `uncertain: true`.
   The finding is `REDACTED_LINK` / `restored`.
 - No match, or more than one: nothing is rewritten. The item keeps the cut link and

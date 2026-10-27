@@ -1480,6 +1480,54 @@ class GroundRedactedLinkTest(unittest.TestCase):
                          "https://de.aliexpress.com/item/9[Telefon]999999")
         self.assertTrue(checked["items"][0]["uncertain"])
 
+    def test_restores_a_cut_link_that_kept_its_query_string(self):
+        # S13 from the 2026-10-27 recheck. Almost every AliExpress link carries
+        # "?spm=...", and the extractor keeps it. The source link is compared
+        # without its query string, so the cut link is still proven -- and the
+        # restored link covers the source link, so UNCOVERED_LINK does not add
+        # the same product a second time.
+        source_link = ("https://de.aliexpress.com/item/1005001234567.html"
+                       "?spm=a2g0o.detail.1000014.3")
+        cut_link = ("https://de.aliexpress.com/item/1005[Telefon]001234567.html"
+                    "?spm=a2g0o.detail.1000014.3")
+        extraction = {"items": [{"description": "Widget", "link": cut_link}]}
+        source = "Acme Tools - order confirmation\n%s\n" % source_link
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["REDACTED_LINK"])
+        self.assertEqual(findings[0]["action"], "restored")
+        self.assertEqual(findings[0]["new_value"],
+                         "https://de.aliexpress.com/item/1005001234567.html")
+        self.assertEqual(checked["items"][0]["link"],
+                         "https://de.aliexpress.com/item/1005001234567.html")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_two_query_string_links_stay_flagged(self):
+        # The prefix matches both products, so the cut link is not proof of
+        # either one. The link stays as the extractor wrote it, query string
+        # included, and both source links are uncovered.
+        cut_link = ("https://de.aliexpress.com/item/100500[Telefon]4567.html"
+                    "?spm=a2g0o.detail.1000014.3")
+        extraction = {"items": [{"description": "Widget", "link": cut_link}]}
+        source = ("Acme Tools - order confirmation\n"
+                  "https://de.aliexpress.com/item/1005001234567.html"
+                  "?spm=a2g0o.detail.1\n"
+                  "https://de.aliexpress.com/item/1005009994567.html"
+                  "?spm=a2g0o.detail.2\n")
+        checked, findings = G.ground(extraction, source)
+        item = checked["items"][0]
+        self.assertEqual(item["link"], cut_link)
+        flagged = [f for f in findings if f["code"] == "REDACTED_LINK"]
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["action"], "flagged")
+        self.assertIsNone(flagged[0]["new_value"])
+        self.assertEqual(flagged[0]["old_value"], cut_link)
+        added = [f["new_value"] for f in findings
+                 if f["code"] == "UNCOVERED_LINK"]
+        self.assertEqual(added, [
+            "https://de.aliexpress.com/item/1005001234567.html",
+            "https://de.aliexpress.com/item/1005009994567.html"])
+        self.assertTrue(item["uncertain"])
+
 
 class GroundSetMultipliedTest(unittest.TestCase):
     """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces."""
