@@ -1364,5 +1364,38 @@ class QuantityFormatTest(unittest.TestCase):
         self.assertIsNone(G._to_number("9" * 13))
 
 
+class GroundInputTypeTest(unittest.TestCase):
+    """QA 13: a wrong input type is a caller bug, not an empty clean result."""
+
+    def test_ground_rejects_an_extraction_that_is_not_a_dict(self):
+        for bad in ([], (), "items", None, 4, b"{}"):
+            with self.assertRaises(TypeError) as caught:
+                G.ground(bad, "")
+            message = str(caught.exception)
+            self.assertIn("extraction", message)
+            self.assertIn(type(bad).__name__, message)
+
+    def test_ground_rejects_items_that_is_not_a_list(self):
+        for bad in ((), "items", {}, None, 4):
+            with self.assertRaises(TypeError) as caught:
+                G.ground({"items": bad}, "")
+            message = str(caught.exception)
+            self.assertIn("items", message)
+            self.assertIn(type(bad).__name__, message)
+
+    def test_ground_rejects_a_source_that_is_not_a_str(self):
+        for bad in (b"text", None, 4, ["text"]):
+            with self.assertRaises(TypeError) as caught:
+                G.ground({"items": []}, bad)
+            message = str(caught.exception)
+            self.assertIn("source_text", message)
+            self.assertIn(type(bad).__name__, message)
+
+    def test_ground_still_tolerates_a_missing_items_key(self):
+        checked, findings = G.ground({}, "Acme Tools\n")
+        self.assertEqual(checked, {"items": []})
+        self.assertEqual(findings, [])
+
+
 if __name__ == "__main__":
     unittest.main()

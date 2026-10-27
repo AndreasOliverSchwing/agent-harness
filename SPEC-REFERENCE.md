@@ -105,6 +105,14 @@ import harness_grounding as g
 checked, findings = g.ground(extraction, source_text)
 ```
 
+The two arguments are checked, not guessed. `ground()` raises `TypeError` when
+`extraction` is not a dict, when `extraction["items"]` is present but not a list,
+or when `source_text` is not a str. The message names the argument and the type
+it received. Coercing a wrong type would be worse than the error: a bare list or
+a tuple of items came back as `{"items": []}` with no finding, and bytes as a
+source flagged every id. A missing `items` key stays allowed and returns an empty
+list, because the data model tolerates missing keys.
+
 A producer that wants to gate its own output blocks on an item with `uncertain: true`,
 or on a finding with action `flagged` or `reported`. Those two are the ones the module
 cannot resolve on its own. The gating policy belongs to the producer, not to the spec.

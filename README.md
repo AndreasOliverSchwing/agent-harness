@@ -153,6 +153,12 @@ That extraction is well-formed and wrong in three ways. It prints
 `MISSING_GTIN attached gtin None -> 4006381333931`. The full runnable version is
 `python3 examples/grounding_example.py`.
 
+`ground()` raises `TypeError` when `extraction` is not a dict, when
+`extraction["items"]` is present but not a list, or when `source_text` is not a
+str. It does not coerce a wrong type: a silent `{"items": []}` would report a
+clean result for a caller bug. A missing `items` key is allowed and returns an
+empty list.
+
 ### The finding contract
 
 Every finding, from every check, has exactly these eight keys:

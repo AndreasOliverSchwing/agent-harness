@@ -45,6 +45,8 @@ A quantity is read as a count of whole pieces: a separator with exactly three
 digits behind it groups thousands ("1.000" and "1,000" are 1000) and one, two,
 four or more digits are a fraction ("1,5" is 1.5). A value above 10**9 or a
 digit run longer than 12 is not a quantity, so untrusted text cannot raise.
+ground() raises TypeError when extraction is not a dict, when extraction["items"]
+is not a list, or when source_text is not a str.
 
 THE FINDING CONTRACT. Every finding from every check carries exactly those
 eight keys and no others. The rules, once, for all six checks:
@@ -596,18 +598,30 @@ def ground(extraction, source_text):
     checked is a deep copy of extraction with flags and attachments applied.
     The input dict is never modified. findings is a list of finding dicts in a
     stable order; it is empty when the extraction is fully grounded.
+
+    A wrong input type raises TypeError. Coercing it would turn a caller's bug
+    into an empty, "clean" result: a bare list or a tuple of items would come
+    back as {"items": []} with no finding, and bytes as a source would flag
+    every id. The three arguments are checked, not guessed:
+
+        ground(extraction: dict, source_text: str) -> (dict, list)
+
+    extraction["items"] must be a list when the key is present. A missing
+    "items" key is allowed and returns an empty list, because the data model
+    tolerates missing keys.
     """
-    checked = copy.deepcopy(extraction)
-    if not isinstance(checked, dict):
-        checked = {"items": []}
-    items = checked.get("items")
-    if not isinstance(items, list):
-        items = []
-        checked["items"] = items
-
+    if not isinstance(extraction, dict):
+        raise TypeError("extraction must be a dict, not %s"
+                        % type(extraction).__name__)
     if not isinstance(source_text, str):
-        source_text = ""
+        raise TypeError("source_text must be a str, not %s"
+                        % type(source_text).__name__)
+    if "items" in extraction and not isinstance(extraction["items"], list):
+        raise TypeError('extraction["items"] must be a list, not %s'
+                        % type(extraction["items"]).__name__)
 
+    checked = copy.deepcopy(extraction)
+    items = checked.setdefault("items", [])
     # origins[i] is the index of items[i] in the caller's list, or None for an
     # item this module appended. It moves with every pop and append, so a
     # finding can name both the returned position and the input position.

@@ -19,6 +19,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `SPEC-REFERENCE.md` and in the module docstring.
 - An item appended for an uncovered link carries the marketplace id in
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
+- **`ground()` raises `TypeError` on a wrong input type.** A non-dict
+  `extraction`, an `items` value that is not a list, and a non-str `source_text`
+  were coerced to `{"items": []}` / `""` and returned a clean result. They now
+  raise, with a message that names the argument and the type it received. A
+  missing `items` key is still allowed and returns an empty list. Documented in
+  `README.md` and `SPEC-REFERENCE.md`.
 
 ### Fixed
 - The quantity-label regex is linear. `\s*:?\s*` split a run of spaces between
