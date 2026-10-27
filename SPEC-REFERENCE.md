@@ -268,8 +268,19 @@ does not exist, so the number is money.
 Two links on one line get one quantity each, because each link reads only the
 text between the previous link and itself (`4x <a> 2x <b>` is 4 and 2). A link
 with no quantity in front of it gets none: the second link of `4x <a> <b>` does
-not inherit the 4. Only the first link on a line may take the quantity from the
-line above.
+not inherit the 4.
+
+A link with nothing in front of it on its line reads the line directly above,
+and only that line. That line must hold nothing but a quantity, and no link on
+the line above that may own it: a link with no quantity of its own claims the
+line below it, so `"<a>\n2 Stück\n<b>"` gives `<a>` the 2 and `<b>` nothing. A
+blank line is layout, so nothing beyond it is borrowed. A link alone on its line
+also reads the line directly below, because a supplier writes the quantity under
+the position as often as above it: `"<a>\n2 Stück\n<b>\n3 Stück"` is 2 and 3. A
+link with no quantity of its own gets none.
+
+The number pattern starts on a left boundary, so `1.000.000 Stück` reads as
+1000000 and not as its last group `000`.
 
 Parsing is capped so untrusted text cannot raise: a digit run longer than 12 is
 ignored, and a value above `10**9` is not a quantity. `10**400` raises

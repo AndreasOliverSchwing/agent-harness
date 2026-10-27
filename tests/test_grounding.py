@@ -998,6 +998,62 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertIsNone(checked["items"][0]["quantity"])
 
+    def test_a_link_takes_its_own_quantity_line_below(self):
+        # S11: the quantity under a position belongs to that position. The
+        # second link used to take the first link's 2.
+        source = ("https://www.amazon.de/dp/B0TESTAAA1\n"
+                  "2 St\u00fcck\n"
+                  "https://www.amazon.de/dp/B0TESTAAA2\n"
+                  "3 St\u00fcck\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [2, 3])
+
+    def test_a_link_never_takes_the_quantity_of_the_link_above(self):
+        # S11: "2 St\u00fcck" sits under the first position, so the second link
+        # has no quantity of its own.
+        source = ("https://www.amazon.de/dp/B0TESTAAA1\n"
+                  "2 St\u00fcck\n"
+                  "https://www.amazon.de/dp/B0TESTAAA2\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [2, None])
+
+    def test_a_blank_line_stops_the_quantity_look_up(self):
+        # S11: the line directly above is the only one that counts. A blank
+        # line is layout, and nothing beyond it is borrowed.
+        source = ("https://www.amazon.de/dp/B0TESTAAA1\n"
+                  "\n"
+                  "2 St\u00fcck\n"
+                  "\n"
+                  "https://www.amazon.de/dp/B0TESTAAA2\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [None, None])
+
+    def test_a_million_in_front_of_a_link_is_a_million(self):
+        # S11: the quantity pattern needs a left boundary, or "1.000.000"
+        # matches its last group "000" and reads as 0.
+        source = "1.000.000 St\u00fcck https://www.amazon.de/dp/B0TESTAAA1\n"
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual(checked["items"][0]["quantity"], 1000000)
+
+    def test_a_million_above_a_link_is_a_million(self):
+        source = ("1.000.000 St\u00fcck\n"
+                  "https://www.amazon.de/dp/B0TESTAAA1\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual(checked["items"][0]["quantity"], 1000000)
+
+    def test_the_second_link_on_a_line_takes_no_quantity_from_below(self):
+        # S11: two links on one line each get one quantity, and the line below
+        # belongs to the line, not to the second link.
+        source = ("4x https://www.amazon.de/dp/B0TESTAAA1 "
+                  "https://www.amazon.de/dp/B0TESTAAA2\n"
+                  "2 St\u00fcck\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([item["quantity"] for item in checked["items"]],
+                         [4, None])
+
     def test_ground_does_not_add_covered_link_by_part_number(self):
         # The item holds the bare ASIN, which is what an extractor writes.
         extraction = {"items": [{"description": "Hex bolt",

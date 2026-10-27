@@ -302,8 +302,15 @@ name", not as a recall rate on real extractor output.
   (`1.234,56` and `1,234.56` are both 1234.56). A price is never a quantity: a
   line with a currency sign (`12,50 €`, `EUR 12,50`, `Preis 12,50`) gives no
   quantity, and neither does a bare fraction alone above a link (`12,50`).
-  Two links on one line get one quantity each; a link with no quantity in front
-  of it gets none. `"2 pcs"` and `Decimal("2")` are quantities, so
+  Two links on one line get one quantity each. A link with no quantity in front
+  of it reads the line directly above, and only that line: that line must hold
+  nothing but a quantity, and no link above it may own it. A link with no
+  quantity of its own claims the line below it. A blank line is layout, so
+  nothing beyond it is borrowed. A link alone on its line also reads the line
+  directly below, because a supplier writes the quantity under the position as
+  often as above it. A link with no quantity of its own gets none. The number
+  pattern starts on a left boundary, so `1.000.000 Stück` reads as 1000000 and
+  not as its last group `000`. `"2 pcs"` and `Decimal("2")` are quantities, so
   `VARIANT_SPLIT` keeps a line that carries one. The unit words are `x`, `×`,
   `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `VE`,
   `Paar`, `Pack`, `kg`, `units` and `sets`. A quantity field that is not empty

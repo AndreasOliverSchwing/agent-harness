@@ -304,21 +304,28 @@ _QUANTITY_UNIT = re.compile(
 # with a currency sign ("12,50 €") is not a quantity and does not match.
 _NUMBER_TEXT = re.compile(r"[+-]?[\d.,]+")
 
+# A number with optional group separators: "4", "1.000", "1.000.000",
+# "12,50". The left boundary stops a match inside a longer number: without it
+# "1.000.000 St\u00fcck" matches its last group "000" and reads as 0. The digit runs
+# are bounded so a long run cannot make the pattern backtrack, and so no
+# unbounded int() is reachable.
+_QUANTITY_NUMBER = (r"(?<![\d.,])\d{1,%d}(?:[.,]\d{1,%d})*"
+                    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS))
+
 # A quantity that stands in front of a link on the same line: "4x <link>",
-# "1.000 Stück <link>". The digit runs are bounded so a long run cannot make
-# the pattern backtrack, and so no unbounded int() is reachable.
+# "1.000 St\u00fcck <link>".
 _QTY_BEFORE = re.compile(
-    r"(\d{1,%d}(?:[.,]\d{1,%d})?)\s*"
+    r"(%s)\s*"
     r"(?:%s)\s*$"
-    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS, _QUANTITY_UNIT_WORDS),
+    % (_QUANTITY_NUMBER, _QUANTITY_UNIT_WORDS),
     re.IGNORECASE)
 
-# A line that holds nothing but a quantity: "4", "4 x", "4 pcs", "1.000 Stück".
+# A line that holds nothing but a quantity: "4", "4 x", "4 pcs", "1.000 St\u00fcck".
 # Group 2 is the unit word; it is None for a bare number.
 _QTY_LINE = re.compile(
-    r"^\s*(\d{1,%d}(?:[.,]\d{1,%d})?)"
+    r"^\s*(%s)"
     r"(?:\s*(%s))?\s*$"
-    % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS, _QUANTITY_UNIT_WORDS),
+    % (_QUANTITY_NUMBER, _QUANTITY_UNIT_WORDS),
     re.IGNORECASE)
 
 # A line that carries money carries no quantity. A price sits on the same line
@@ -816,11 +823,12 @@ def _check_uncovered_links(items, origins, source_text):
     is appended, never inserted, so the extractor's own order stays readable.
     The quantity is the one written in front of THAT link on the same line
     ("4x <link>"), or, for the first link on its line, the quantity on the line
-    above when that line holds nothing but a quantity. Two links on one line
-    therefore get one quantity each, and a link with no quantity of its own
-    gets none: a single "4x" in front of two links belongs to the first one
-    only. The marketplace id goes into other_ids: it is not a part number and
-    not a description.
+    directly above when that line holds nothing but a quantity and no link above
+    owns it, or the quantity on the line directly below when the link is alone
+    on its line. Two links on one line therefore get one quantity each, and a
+    link with no quantity of its own gets none: a single "4x" in front of two
+    links belongs to the first one only. The marketplace id goes into
+    other_ids: it is not a part number and not a description.
     """
     findings = []
     lines = source_text.splitlines()
@@ -834,6 +842,7 @@ def _check_uncovered_links(items, origins, source_text):
             segment = line[previous_end:match.start()]
             first_on_line = previous_end == 0
             previous_end = match.end()
+            only_on_line = first_on_line and _URL.search(line, match.end()) is None
             url = _clean_link(match.group(0))
             if not url or url in seen:
                 continue
@@ -847,7 +856,7 @@ def _check_uncovered_links(items, origins, source_text):
                 "other_ids": [link_id],
                 "link": url,
                 "quantity": _link_quantity(lines, line_index, segment,
-                                           first_on_line),
+                                           first_on_line, only_on_line),
                 "unit": "piece",
                 "uncertain": True,
             })
@@ -1493,27 +1502,51 @@ def _covers_link(item, url, link_id):
     return False
 
 
-def _link_quantity(lines, line_index, segment, first_on_line):
+def _claims_the_line_below(line):
+    """Return True when the first link on a line has no quantity of its own.
+
+    A supplier writes the quantity under the position as often as above it, so
+    "2 St\\u00fcck" below a bare link is that link's quantity, and the next link
+    must not borrow it. A link that already carries its quantity in front of it
+    ("4x <link>") claims nothing below: the line under it belongs to the next
+    position. A line with no link claims nothing.
+    """
+    match = _URL.search(line)
+    if match is None:
+        return False
+    segment = _without_markdown_text(line[:match.start()])
+    return _QTY_BEFORE.search(segment) is None
+
+
+def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
     """Return the quantity that belongs to one link, or None.
 
     segment is the text on the link's own line between the previous link and
     this one, so two links on one line cannot share a quantity. A quantity
-    written in front of the link ("4x <link>") belongs to it. A link with
-    nothing in front of it on its line takes the quantity from the line above,
-    but only the first link on a line: the second link of "4x <a> <b>" has no
-    quantity of its own and must not inherit one. A blank line above is
-    skipped: an empty line is layout, not information.
+    written in front of the link ("4x <link>") belongs to it.
+
+    A link with nothing in front of it on its line looks at the line directly
+    above, and only that line: a blank line is layout, and nothing beyond it is
+    borrowed. The line must hold nothing but a quantity, and it must not be the
+    quantity of the link above it. "2 St\u00fcck" under one position belongs to that
+    position, so the next link must not take it.
+
+    A link that is alone on its line also takes the quantity on the line
+    directly below it, because a supplier writes the quantity under the
+    position as often as above it. The second link of "4x <a> <b>" does not:
+    the line below belongs to the line, not to one of two links.
     """
     match = _QTY_BEFORE.search(_without_markdown_text(segment))
     if match:
         return _to_number(match.group(1))
-    if not first_on_line:
-        return None
-    for back in range(line_index - 1, -1, -1):
-        previous = lines[back].strip()
-        if not previous:
-            continue
-        return _previous_line_quantity(previous)
+    if first_on_line and line_index > 0:
+        quantity = _previous_line_quantity(lines[line_index - 1].strip())
+        if quantity is not None:
+            above = line_index - 2
+            if not (above >= 0 and _claims_the_line_below(lines[above])):
+                return quantity
+    if only_on_line and line_index + 1 < len(lines):
+        return _previous_line_quantity(lines[line_index + 1].strip())
     return None
 
 
