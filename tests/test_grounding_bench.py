@@ -2,9 +2,14 @@
 
 Two tiny inline cases, one with an error and one without. They check the
 scoring functions only: what counts as a catch, what counts as a correction,
-and what counts as a false alarm. The 30-case file is measured, not asserted
-here — a benchmark that fails when a check gets worse cannot also be run as a
-regression gate without hiding the number it exists to report.
+and what counts as a false alarm.
+
+The shipped case file is asserted for its SHAPE, not its scores: 34 cases, one
+expected item on every injected error, synthetic data only. The scores
+themselves are measured and reported, because a benchmark that fails when a
+check gets worse cannot also be a regression gate without hiding the number it
+exists to report. The one exception is the README consistency test, which
+asserts that the figures the docs quote are the figures the bench produces.
 
     python3 -m unittest discover -s tests -v
 """
@@ -12,7 +17,9 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,6 +38,7 @@ _spec.loader.exec_module(R)
 BROKEN = {
     "id": "inline-missing-gtin",
     "error_type": "omit_gtin",
+    "expect_item": 0,
     "source_text": "Acme Tools - order request\n"
                    "Hex bolt M8 zinc plated, part AC-4417, GTIN 4000000000006\n"
                    "quantity: 40\n",
@@ -94,6 +102,25 @@ class ScoreCaseTest(unittest.TestCase):
         self.assertFalse(R.is_caught(BROKEN, findings))
         self.assertFalse(R.is_caught(SOUND, findings))
 
+    def test_a_finding_on_another_item_is_not_a_catch(self):
+        # The right code on the wrong item has not found the injected error:
+        # the case names item 0, so a finding on item 1 is no catch.
+        findings = [{"code": "MISSING_GTIN", "action": "attached",
+                     "field": "gtin", "old_value": None,
+                     "new_value": "4000000000006", "item_index": 1,
+                     "input_index": 1, "evidence": "test"}]
+        self.assertFalse(R.is_caught(BROKEN, findings))
+
+        findings[0]["item_index"] = 0
+        self.assertTrue(R.is_caught(BROKEN, findings))
+
+    def test_a_case_without_expect_item_is_never_a_catch(self):
+        nameless = dict(BROKEN)
+        del nameless["expect_item"]
+        findings = [{"code": "MISSING_GTIN", "action": "attached",
+                     "item_index": 0, "evidence": "test"}]
+        self.assertFalse(R.is_caught(nameless, findings))
+
     def test_corrected_ignores_uncertain_and_note_but_not_a_wrong_value(self):
         wrong = copy.deepcopy(BROKEN["extractor_output"])
         wrong["items"][0]["uncertain"] = True
@@ -124,24 +151,84 @@ class SummariseTest(unittest.TestCase):
 
 
 class LoadCasesTest(unittest.TestCase):
-    def test_the_shipped_case_file_holds_30_known_cases(self):
+    def test_the_shipped_case_file_holds_34_known_cases(self):
         cases = R.load_cases()
-        self.assertEqual(len(cases), 30)
+        self.assertEqual(len(cases), 34)
         counts = {}
         for case in cases:
             counts[case["error_type"]] = counts.get(case["error_type"], 0) + 1
         self.assertEqual(counts, {
             "omit_gtin": 6,
             "invented_part_number": 6,
+            "redacted_link": 4,
             "missed_link": 6,
             "set_multiplied": 4,
             "variant_split": 4,
             "clean": 4,
         })
 
+    def test_every_injected_error_names_its_item(self):
+        for case in R.load_cases():
+            if case["error_type"] == "clean":
+                self.assertNotIn("expect_item", case)
+            else:
+                self.assertIsInstance(case["expect_item"], int, case["id"])
+                self.assertGreaterEqual(case["expect_item"], 0, case["id"])
+
+    def test_a_case_without_expect_item_is_rejected(self):
+        case = copy.deepcopy(BROKEN)
+        del case["expect_item"]
+        path = os.path.join(self.tmp, "cases.json")
+        with open(path, "w") as handle:
+            json.dump([case], handle)
+        with self.assertRaises(ValueError):
+            R.load_cases(path)
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
     def test_every_case_id_is_unique(self):
         ids = [case["id"] for case in R.load_cases()]
         self.assertEqual(len(ids), len(set(ids)))
+
+
+class RedactedLinkCasesTest(unittest.TestCase):
+    """The four REDACTED_LINK cases, and what each one must prove."""
+
+    def setUp(self):
+        self.cases = {case["id"]: case for case in R.load_cases()
+                      if case["error_type"] == "redacted_link"}
+
+    def test_four_redacted_link_cases_ship(self):
+        self.assertEqual(len(self.cases), 4)
+
+    def test_a_shared_prefix_stays_flagged_and_is_not_restored(self):
+        case = self.cases["redacted-02"]
+        checked, findings = G.ground(case["extractor_output"],
+                                     case["source_text"])
+        self.assertEqual([f["action"] for f in findings], ["flagged"])
+        self.assertEqual([f["item_index"] for f in findings], [0])
+        # The cut link is left exactly as the extractor wrote it.
+        self.assertEqual(checked["items"][0]["link"],
+                         case["extractor_output"]["items"][0]["link"])
+        self.assertEqual(R.strip_ignored(checked), case["gold"])
+
+    def test_a_unique_match_is_restored(self):
+        case = self.cases["redacted-01"]
+        checked, findings = G.ground(case["extractor_output"],
+                                     case["source_text"])
+        self.assertEqual([f["action"] for f in findings], ["restored"])
+        self.assertEqual(R.strip_ignored(checked), case["gold"])
+        self.assertNotIn("[", checked["items"][1]["link"])
+
+    def test_two_cut_links_are_restored_on_their_own_item(self):
+        case = self.cases["redacted-04"]
+        _checked, findings = G.ground(case["extractor_output"],
+                                      case["source_text"])
+        self.assertEqual([f["action"] for f in findings],
+                         ["restored", "restored"])
+        self.assertEqual([f["item_index"] for f in findings], [0, 1])
 
 
 class CasePrivacyTest(unittest.TestCase):

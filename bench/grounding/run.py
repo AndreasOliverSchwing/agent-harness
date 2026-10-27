@@ -8,7 +8,8 @@ library only, no network, no LLM.
 
 Three scores per case:
 
-    caught      a finding with the code the injected error should produce
+    caught      a finding with the code the injected error should produce,
+                on the item the case names in "expect_item"
     corrected   the checked output equals gold once "uncertain" and "note"
                 are removed from every item
     false alarm any finding on a case that holds no error
@@ -39,6 +40,7 @@ RESULTS_PATH = os.path.join(HERE, "RESULTS.md")
 EXPECTED_CODES = {
     "omit_gtin": ("MISSING_GTIN",),
     "invented_part_number": ("UNGROUNDED_ID",),
+    "redacted_link": ("REDACTED_LINK",),
     "missed_link": ("UNCOVERED_LINK",),
     "set_multiplied": ("SET_MULTIPLIED",),
     "variant_split": ("VARIANT_SPLIT",),
@@ -49,6 +51,7 @@ EXPECTED_CODES = {
 TYPE_ORDER = (
     "variant_split",
     "invented_part_number",
+    "redacted_link",
     "missed_link",
     "set_multiplied",
     "omit_gtin",
@@ -74,6 +77,16 @@ def load_cases(path=CASES_PATH):
         if case["error_type"] not in EXPECTED_CODES:
             raise ValueError("case %r has unknown error_type %r"
                              % (case["id"], case["error_type"]))
+        # A case that injects an error must name the item the error is on.
+        # Without it a finding on the wrong item would count as a catch.
+        if EXPECTED_CODES[case["error_type"]]:
+            item = case.get("expect_item")
+            if not isinstance(item, int) or isinstance(item, bool) or item < 0:
+                raise ValueError("case %r must have a non-negative int "
+                                 "expect_item, not %r" % (case["id"], item))
+        elif "expect_item" in case:
+            raise ValueError("case %r injects no error, so it must not "
+                             "declare expect_item" % case["id"])
     return cases
 
 
@@ -97,11 +110,21 @@ def strip_ignored(extraction):
 
 
 def is_caught(case, findings):
-    """True when a finding carries a code the injected error should produce."""
+    """True when a finding carries the expected code on the expected item.
+
+    The code alone is not a catch: a check that fires on the wrong item has
+    not found the error the case injected. Every error case names that item in
+    ``expect_item``, so a finding on any other item does not count.
+    """
     wanted = set(expected_codes(case["error_type"]))
     if not wanted:
         return False
-    return any(finding.get("code") in wanted for finding in findings)
+    expected_item = case.get("expect_item")
+    if expected_item is None:
+        return False
+    return any(finding.get("code") in wanted
+               and finding.get("item_index") == expected_item
+               for finding in findings)
 
 
 def is_corrected(case, checked):
@@ -173,15 +196,22 @@ NOT_CORRECTED_REASON = {
         "`UNGROUNDED_ID` flags the value and sets `uncertain`. It never rewrites "
         "a part number, because the source does not prove the right one.",
     "missed_link":
-        "`UNCOVERED_LINK` appends a placeholder item: `description` and "
-        "`part_number` set to the link id, `unit` \"piece\". `gold` holds none "
-        "of those fields. When the item exists but lost its link, the result is "
-        "a second item, not a link put back on the first.",
+        "`UNCOVERED_LINK` appends a placeholder item: `other_ids` holds the "
+        "marketplace id, plus the `link`, the `quantity` and `unit` \"piece\". "
+        "`gold` holds a product item with a description and a part number "
+        "instead. When the item exists but lost its link, the result is a "
+        "second item, not a link put back on the first.",
 }
 
 
 def render_results(summary, scored):
     """Return the full RESULTS.md text."""
+    total = len(scored)
+    clean_n = summary.get("clean", {}).get("n", 0)
+    injected = total - clean_n
+    error_types = [error_type for error_type in TYPE_ORDER
+                   if EXPECTED_CODES[error_type]
+                   and summary.get(error_type, {}).get("n")]
     missed = {}
     uncaught = []
     for result in scored:
@@ -205,25 +235,33 @@ def render_results(summary, scored):
         % (total_false_alarms(scored),
            summary.get("clean", {}).get("n", 0)),
         "",
-        "`caught` means a finding with the expected code. `corrected` means the"
-        " checked output equals `gold` once `uncertain` and `note` are removed.",
+        "`caught` means a finding with the expected code **on the item the case"
+        " names**. `corrected` means the checked output equals `gold` once"
+        " `uncertain` and `note` are removed.",
         "The `clean` row injects no error, so it has nothing to catch. Its"
         " `corrected` count shows that `ground()` left a correct extraction"
         " untouched.",
         "",
         "## Method",
         "",
-        "1. `cases.json` holds 30 order requests. Each case has `source_text`,"
-        " `gold` and `extractor_output`.",
+        "1. `cases.json` holds %d order requests: %d injected errors across %d"
+        " error types, plus %d error-free controls. Each case has"
+        " `source_text`, `gold` and `extractor_output`."
+        % (total, injected, len(error_types), clean_n),
         "2. `run.py` calls `ground(extractor_output, source_text)` on each case.",
-        "3. `caught` asks for the finding code the injected error should raise:"
-        " `MISSING_GTIN`, `UNGROUNDED_ID`, `UNCOVERED_LINK`, `SET_MULTIPLIED`"
-        " or `VARIANT_SPLIT`.",
+        "3. `caught` asks for the finding code the injected error should raise,"
+        " **on the item the case names** in `expect_item`: `MISSING_GTIN`,"
+        " `UNGROUNDED_ID`, `REDACTED_LINK`, `UNCOVERED_LINK`,"
+        " `SET_MULTIPLIED` or `VARIANT_SPLIT`. A finding with the right code on"
+        " another item is not a catch.",
         "4. `corrected` compares the returned items with `gold`. The comparison"
         " drops `uncertain` and `note`, because `ground()` sets them to explain"
-        " itself and they are not extraction values.",
-        "5. `false alarm` counts the 4 error-free cases where any finding"
-        " appeared at all.",
+        " itself and they are not extraction values. A case whose right answer"
+        " is to leave the extraction alone counts as corrected when nothing"
+        " changed, so `corrected` alone never proves that a check ran: read it"
+        " with `caught`.",
+        "5. `false alarm` counts the %d error-free cases where any finding"
+        " appeared at all." % clean_n,
         "",
         "## Limits",
         "",
@@ -235,7 +273,8 @@ def render_results(summary, scored):
         "- `corrected` is a strict comparison. `ground()` adds a placeholder item",
         "  for an uncovered link and never rewrites an unsupported part number,",
         "  so those two error types cannot reach `corrected` by design.",
-        "- All 30 cases were written to fall inside the scope of the checks, so a",
+        "- All %d cases were written to fall inside the scope of the checks, so a"
+        % total,
         "  high `caught` count is expected. It is not a measure of recall on real",
         "  extractor output.",
         "- The case set is small. One case is one data point.",
