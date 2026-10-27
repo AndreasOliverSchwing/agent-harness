@@ -70,6 +70,10 @@ eight keys and no others. The rules, once, for all six checks:
 A finding never carries a bare "value" key. It is ambiguous: it held the old
 value for some codes and the new one for others. Read old_value and new_value.
 
+item_index and input_index are the same number until a merge removes an item.
+VARIANT_SPLIT removes one, so after a merge every later finding can carry two
+different numbers, whatever its code. Read both; never assume they are equal.
+
 An appended item never invents a part number or a description. A marketplace id
 belongs in other_ids, so an item added for an uncovered link carries
 other_ids ["ASIN:..."], the link, the quantity and the unit, nothing else.

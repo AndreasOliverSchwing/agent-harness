@@ -1745,6 +1745,36 @@ class GroundVariantSplitTest(unittest.TestCase):
         self.assertEqual([f["input_index"] for f in findings], [1, 2])
 
 
+class IndexDivergenceTest(unittest.TestCase):
+    """S9: after a merge, every later finding can name two different indexes.
+
+    README.md and SPEC-REFERENCE.md said that VARIANT_SPLIT is the one code
+    where the two indexes differ. That is false: a merge removes an item, so
+    every finding recorded after it can carry two different numbers.
+    """
+
+    def test_a_later_finding_after_a_merge_names_two_different_indexes(self):
+        extraction = {"items": [
+            {"part_number": "AC-4417", "quantity": 4},
+            {"part_number": "AC-4417"},
+            {"part_number": "ZZ-9999", "quantity": 2},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        self.assertEqual(len(checked["items"]), 2)
+        flagged = [f for f in findings if f["code"] == "UNGROUNDED_ID"]
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["item_index"], 1)
+        self.assertEqual(flagged[0]["input_index"], 2)
+
+    def test_the_docs_do_not_call_variant_split_the_only_divergent_code(self):
+        for name in ("README.md", "SPEC-REFERENCE.md"):
+            with open(os.path.join(REPO, name)) as handle:
+                text = handle.read()
+            self.assertNotIn("is the one code where the two indexes differ",
+                             text, name)
+            self.assertIn("after a merge, every later finding can", text, name)
+
+
 class GroundLinkContractTest(unittest.TestCase):
     """The new checks keep the promises ground() already made."""
 

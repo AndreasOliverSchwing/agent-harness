@@ -403,8 +403,10 @@ Rules:
   entry that is not a string, and every blank string, so a caller-supplied dict,
   list or `None` cannot raise out of `ground()`. The entry stays in the item; the
   module only declines to read it as an id.
-- `VARIANT_SPLIT` is the one code where the two indexes differ. `item_index` is
-  the surviving item; `input_index` is the variant line that was folded into it.
+- `item_index` and `input_index` are the same number until an item is merged
+  away. `VARIANT_SPLIT` removes an item, so after a merge, every later finding can
+  have `item_index` different from `input_index`, whatever its code: `item_index`
+  counts the returned list, `input_index` counts the caller's list.
 - An appended item carries the marketplace id in `other_ids`
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
   `description`. Its `input_index` is `None`.

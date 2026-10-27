@@ -188,8 +188,11 @@ nothing is written and `new_value` is `None`. The variant's value is in
 `old_value` and the survivor's value is named in `evidence`.
 For the list key `other_ids`, `new_value` is the entry that was added.
 
-`VARIANT_SPLIT` is the one code where the two indexes differ: `item_index` is
-the surviving item, `input_index` is the variant line that was folded into it.
+`item_index` and `input_index` are the same number until an item is merged
+away. `VARIANT_SPLIT` removes an item, so **after a merge, every later finding can
+have `item_index` different from `input_index`**, whatever its code: `item_index`
+counts the returned list, `input_index` counts the list you passed in. Read both
+and never assume they are equal.
 An item this module appends for an uncovered link has `input_index: None` and
 carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 `part_number` or `description`.
