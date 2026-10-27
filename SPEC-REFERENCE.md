@@ -191,6 +191,21 @@ Both GTIN checks compare the padded form:
   item's `gtin`, `part_number` and `other_ids` all count, and a label in front of
   the number is ignored: `EAN:0036000291452` carries the GTIN.
 
+### Which item a GTIN belongs to
+
+`MISSING_GTIN` writes only to the item the GTIN's line names. The part number
+decides first, on a token boundary: a supplier line prints the part number of
+the product it prices, and two siblings can share every description word.
+
+- A bare GTIN line (keyword and number, nothing else) is read with the line
+  directly above it, because a supplier prints it under the position.
+- When no part number stands on the line, the description decides, and only
+  when exactly one item reaches the match ratio.
+- A tie, or no match at all, is reported with `item_index` null. Nothing is
+  written. One item in the extraction is not a reason to attach.
+- An item this module appended never takes a GTIN. It carries a link and no
+  product.
+
 ### How an id is grounded
 
 `UNGROUNDED_ID` grounds an id on a token boundary. A source that holds

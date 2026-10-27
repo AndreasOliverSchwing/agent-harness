@@ -392,15 +392,14 @@ class GroundMissingGtinTest(unittest.TestCase):
         self.assertTrue(checked["items"][0]["uncertain"])
         self.assertTrue(checked["items"][1]["uncertain"])
 
-    def test_ground_single_item_gets_gtin(self):
-        # One item: there is no wrong item to pick, so it takes the GTIN even
-        # when the description does not overlap at all.
+    def test_ground_reports_a_gtin_that_one_item_cannot_claim(self):
+        # One item is not a reason to attach. The line names no product of the
+        # extraction, so the GTIN is reported (S6).
         extraction = {"items": [{"description": "Garden hose"}]}
         checked, findings = G.ground(extraction, ONE_GTIN_SOURCE)
-        self.assertEqual(findings[0]["action"], "attached")
-        self.assertEqual(findings[0]["item_index"], 0)
-        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
-        self.assertTrue(checked["items"][0]["uncertain"])
+        self.assertEqual(findings[0]["action"], "reported")
+        self.assertIsNone(findings[0]["item_index"])
+        self.assertNotIn("gtin", checked["items"][0])
 
     def test_ground_reports_when_nothing_matches(self):
         extraction = {"items": [
@@ -534,6 +533,58 @@ class GtinKeywordRuleTest(unittest.TestCase):
                              keyword)
             self.assertEqual(checked["items"][0]["gtin"], "2000000000015",
                              keyword)
+
+    def test_ground_attaches_each_gtin_to_the_part_number_on_its_line(self):
+        # S6 (a) from the 2026-10-27 recheck. Two siblings share every
+        # description word, so the description alone cannot separate them. Each
+        # line names its own part number, and that decides.
+        source = ("AC-44108 Sechskantschraube M8 verzinkt, EAN 2000000000015\n"
+                  "AC-44110 Sechskantschraube M10 verzinkt, EAN 2000000000022\n")
+        extraction = {"items": [
+            {"part_number": "AC-44108",
+             "description": "Sechskantschraube M8 verzinkt", "quantity": 4},
+            {"part_number": "AC-44110",
+             "description": "Sechskantschraube M10 verzinkt", "quantity": 2},
+        ]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings],
+                         ["attached", "attached"])
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
+        self.assertEqual(checked["items"][1]["gtin"], "2000000000022")
+
+    def test_ground_reports_a_gtin_two_descriptions_match(self):
+        # S6 (b): the line names an unordered product, and its words match both
+        # ordered items. A tie is reported, never attached to the first item.
+        source = ("AC-44170 Sechskantschraube M8 verzinkt, 4 St\u00fcck\n"
+                  "NW-22010 Unterlegscheibe M8 verzinkt, 4 St\u00fcck\n"
+                  "Kabelbinder M8 verzinkt, EAN 2000000000022\n")
+        extraction = {"items": [
+            {"part_number": "AC-44170",
+             "description": "Sechskantschraube M8 verzinkt", "quantity": 4},
+            {"part_number": "NW-22010",
+             "description": "Unterlegscheibe M8 verzinkt", "quantity": 4},
+        ]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["code"], "MISSING_GTIN")
+        self.assertEqual(findings[0]["action"], "reported")
+        self.assertIsNone(findings[0]["item_index"])
+        self.assertNotIn("gtin", checked["items"][0])
+        self.assertNotIn("gtin", checked["items"][1])
+
+    def test_ground_never_attaches_a_gtin_to_an_appended_item(self):
+        # S6 (c): the only item is the placeholder UNCOVERED_LINK appended. The
+        # GTIN belongs to no item the extractor produced, so it is reported.
+        source = ("Acme Tools\n"
+                  "4x https://www.amazon.de/dp/B0TESTAAA1\n"
+                  "EAN 2000000000015\n")
+        checked, findings = G.ground({"items": []}, source)
+        self.assertEqual([f["code"] for f in findings],
+                         ["UNCOVERED_LINK", "MISSING_GTIN"])
+        self.assertEqual(findings[1]["action"], "reported")
+        self.assertIsNone(findings[1]["item_index"])
+        self.assertEqual(len(checked["items"]), 1)
+        self.assertNotIn("gtin", checked["items"][0])
 
     def test_ground_does_not_move_a_gtin_on_a_generic_word_alone(self):
         # Both descriptions hold "part" and the GTIN line holds "part" too. An

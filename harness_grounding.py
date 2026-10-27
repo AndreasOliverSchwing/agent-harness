@@ -1098,7 +1098,7 @@ def _merge_variant_values(survivor, variant):
 
 
 def _gtin_candidates(source_text):
-    """Return [(gtin, line)] for the GTINs the source marks as GTINs, in order.
+    """Return [(gtin, line, previous_line)] for the marked GTINs, in order.
 
     Two rules decide what counts, and both exist because a digit run alone
     proves nothing:
@@ -1112,11 +1112,18 @@ def _gtin_candidates(source_text):
     - The run must not sit inside a link. A marketplace item number in a URL
       is a product position, not a GTIN.
 
+    previous_line is the line above, and it is passed only when this line holds
+    nothing but the keyword and the number: a supplier often prints the GTIN on
+    a line of its own under the position it belongs to. A line that carries any
+    other word ("GTIN ..., part of set") names no product either, but it is not
+    a bare GTIN line, so nothing above it is borrowed.
+
     The same number written twice is returned once, compared as a GTIN-14.
     """
     found = []
     seen = set()
-    for line in source_text.splitlines():
+    lines = source_text.splitlines()
+    for index, line in enumerate(lines):
         if not _GTIN_KEYWORD.search(line):
             continue
         spans = [match.span() for match in _URL.finditer(line)]
@@ -1130,22 +1137,29 @@ def _gtin_candidates(source_text):
             if form in seen:
                 continue
             seen.add(form)
-            found.append((run, line.strip()))
+            rest = line[:match.start()] + line[match.end():]
+            bare = not any(character.isalnum() for character in rest)
+            previous = lines[index - 1].strip() if index and bare else ""
+            found.append((run, line.strip(), previous))
     return found
 
 
 def _check_missing_gtins(items, origins, source_text):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
 
-    The target item is the one whose description shares at least MATCH_RATIO of
-    its content words with the source line holding the GTIN. Generic words do
-    not count: "part" occurs in half the descriptions and in half the source
-    lines, so an overlap on it alone must not move a GTIN to another product.
+    The target item is the one the GTIN's line names. The part number on the
+    line decides first, on a token boundary: a supplier line carries the part
+    number of the product it prices, and two siblings can share every
+    description word.
 
-    When no description is close enough and exactly one item exists, that item
-    takes the GTIN: with a single item there is no wrong item to pick.
-    Otherwise the finding is reported with item_index None and nothing is
-    changed.
+    When the line names no part number, the description decides, and only when
+    exactly one item matches. Generic words do not count: "part" occurs in half
+    the descriptions and in half the source lines, so an overlap on it alone
+    must not move a GTIN to another product. A tie, or no match at all, is
+    reported with item_index None and nothing is written.
+
+    An item this module appended is never a target: its fields come from a bare
+    link, so it states no product that a GTIN could belong to.
     """
     findings = []
     candidates = _gtin_candidates(source_text)
@@ -1153,15 +1167,17 @@ def _check_missing_gtins(items, origins, source_text):
         return findings
 
     carried = _carried_gtins(items)
-    for gtin, line in candidates:
+    for gtin, line, previous in candidates:
         form = gtin14(gtin)
         if form in carried:
             continue
-        index = _best_item(items, line)
+        index, note = _gtin_owner(items, origins, line, previous)
+        evidence = "%s (%s)" % (line, note) if line else \
+            "GTIN %s occurs in the source text (%s)" % (gtin, note)
         if index is None:
             findings.append(_finding(
                 "MISSING_GTIN", "reported",
-                evidence=line or "GTIN %s occurs in the source text" % gtin,
+                evidence=evidence,
                 field="gtin",
                 item_index=None,
                 input_index=None))
@@ -1180,7 +1196,7 @@ def _check_missing_gtins(items, origins, source_text):
         carried.add(form)
         findings.append(_finding(
             "MISSING_GTIN", "attached",
-            evidence=line or "GTIN %s occurs in the source text" % gtin,
+            evidence=evidence,
             field=field,
             new_value=gtin,
             item_index=index,
@@ -1243,27 +1259,51 @@ def _overlap(left, right):
     return len(left & right) / float(min(len(left), len(right)))
 
 
-def _best_item(items, line):
-    """Index of the item that best matches line, or None.
+def _gtin_owner(items, origins, line, previous=""):
+    """Return (index, note) for the item a GTIN line names, or (None, note).
 
-    A tie goes to the earlier item: the first mention in the extraction is the
-    one a human would check first.
+    The part number on the line decides, on a token boundary. It is the one
+    field that separates two siblings whose descriptions read alike, and it is
+    what the supplier prints next to the GTIN.
+
+    A bare GTIN line (keyword and number, nothing else) names no product of its
+    own: the supplier prints it under the position it belongs to. Such a line is
+    read together with the line directly above it.
+
+    When neither line names a part number, the description decides, but only
+    when exactly one item reaches MATCH_RATIO. A tie, or no match at all, is
+    (None, note): a reported GTIN is cheap, a GTIN on the wrong product is not.
+
+    An item this module appended is never a candidate. It carries a link and no
+    product, so it cannot own a GTIN.
     """
-    line_words = _words(line)
-    best_index = None
-    best_ratio = 0.0
+    match_line = previous or line
+    flat, boundary = _source_id_index(match_line)
+    by_part = []
     for index, item in enumerate(items):
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or origins[index] is None:
             continue
-        ratio = _overlap(_words(item.get("description")), line_words)
-        if ratio > best_ratio:
-            best_index = index
-            best_ratio = ratio
-    if best_index is not None and best_ratio >= MATCH_RATIO:
-        return best_index
-    if len(items) == 1 and isinstance(items[0], dict):
-        return 0
-    return None
+        form = _id_form(item.get("part_number"))
+        if len(form) < MIN_ID_LEN:
+            continue
+        if _id_occurs(form, flat, boundary):
+            by_part.append(index)
+    if len(by_part) == 1:
+        return by_part[0], "the line names that item's part number"
+    if len(by_part) > 1:
+        return None, ("the line names the part number of %d items, so the "
+                      "product is ambiguous" % len(by_part))
+    line_words = _words(match_line)
+    by_words = [index for index, item in enumerate(items)
+                if isinstance(item, dict) and origins[index] is not None
+                and _overlap(_words(item.get("description")), line_words)
+                >= MATCH_RATIO]
+    if len(by_words) == 1:
+        return by_words[0], "exactly one description matches the line"
+    if len(by_words) > 1:
+        return None, ("%d descriptions match the line, so the product is "
+                      "ambiguous" % len(by_words))
+    return None, "the line names no item of the extraction"
 
 
 # ── link helpers ───────────────────────────────────────────────────────────
