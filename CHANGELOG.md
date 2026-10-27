@@ -64,6 +64,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   zero-width space U+200B) are normalized in the value and in the source, so an
   id written with an en dash or a soft hyphen is not flagged. Documented in
   `SPEC-REFERENCE.md`, "How an id is grounded".
+- A German `ß` or a PDF ligature no longer shifts the id index. `ß` upper-cases
+  to `SS`, and `ﬁ` and `ﬂ` to `FI` and `FL`, but the boundary list kept one slot
+  per source character, so every later id sat off the list: a correct id was
+  flagged as `UNGROUNDED_ID`, and `ground()` raised `IndexError` on a source such
+  as `Grüße aus der Lindenstraße`. The boundary list now keeps one slot per
+  output character. Documented in `README.md` and `SPEC-REFERENCE.md`.
 - Link scanning is linear in the length of the text. `_clean_link` strips the
   prose punctuation with `str.rstrip` instead of a `$`-anchored regex, which
   retried from every position: a 20,000-character link holding a long run of

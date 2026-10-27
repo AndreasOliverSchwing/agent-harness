@@ -306,6 +306,77 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class GermanTextAlignmentTest(unittest.TestCase):
+    """B1: a character that upper-cases to two characters must not shift ids.
+
+    "ß" upper-cases to "SS", and the PDF ligatures "ﬁ" and "ﬂ" upper-case to
+    "FI" and "FL". The flat text grows by one character for each of them, so a
+    boundary list with one slot per source character runs out of step: every
+    later id is flagged, and ground() can raise IndexError.
+    """
+
+    def test_the_boundary_list_stays_aligned_with_the_flat_text(self):
+        for text in ("Straße", "Proﬁl", "Anﬂanschplatte",
+                     "Grüße aus der Lindenstraße"):
+            flat, boundary = G._source_id_index(text)
+            self.assertEqual(len(boundary), len(flat) + 1, text)
+
+    def test_a_sharp_s_in_the_address_does_not_flag_a_grounded_id(self):
+        # B1 (a) from the 2026-10-27 recheck: spelled "strasse" there is no
+        # finding, so "ß" must not create one either.
+        source = ("Muster Werkzeug GmbH, Industriestraße 12, 80331 München\n"
+                  "Bestellung\n"
+                  "Pos. 1: 4 Stück Sechskantschraube M8, Art.-Nr. AC-4417\n")
+        extraction = {"items": [{"part_number": "AC-4417", "quantity": 4}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+    def test_a_sharp_s_before_an_id_does_not_raise(self):
+        # B1 (b): the boundary list was shorter than the flat text, so ground()
+        # raised IndexError instead of answering.
+        source = "Grüße aus der Lindenstraße\nBitte liefern: AC-4417"
+        extraction = {"items": [{"part_number": "AC-4417", "quantity": 1}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+    def test_a_german_signature_above_a_quoted_order_flags_nothing(self):
+        # A signature with "Grüße" and "Musterstraße" above a quoted three-line
+        # order flagged every part number in the order.
+        source = ("Grüße aus Musterstadt\n"
+                  "Musterstraße 1\n"
+                  "---\n"
+                  "> Pos. 1: 4 Stück Sechskantschraube M8, Art.-Nr. AC-44170\n"
+                  "> Pos. 2: 2 Stück Unterlegscheibe M8, Art.-Nr. NW-22010\n"
+                  "> Pos. 3: 1 Stück Kabelbinder, Art.-Nr. NW-22011\n")
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "NW-22010", "quantity": 2},
+            {"part_number": "NW-22011", "quantity": 1},
+        ]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+    def test_a_sharp_s_does_not_hide_a_multiplied_set(self):
+        # The same shift left "AC-44170" flagged and the set line uncorrected.
+        source = "Maßband AC-44170 5er-Pack, Menge: 2 x 5"
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 10}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 2)
+
+    def test_a_pdf_fi_ligature_does_not_flag_a_grounded_id(self):
+        source = "Proﬁl-Schiene AC-44170, 4 Stück"
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 4}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+    def test_a_pdf_fl_ligature_does_not_flag_a_grounded_id(self):
+        source = "Anﬂanschplatte AC-44170, 4 Stück"
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 4}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+
 class GroundMissingGtinTest(unittest.TestCase):
     """MISSING_GTIN: attach what the source proves, report what it cannot place."""
 

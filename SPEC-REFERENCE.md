@@ -205,6 +205,12 @@ and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and `AC–4417
 that is not a joiner is dropped from the value too, so `(AC-4417)` means
 `AC-4417`.
 
+A German `ß` and the PDF ligatures `ﬁ` and `ﬂ` upper-case to two characters
+(`SS`, `FI`, `FL`). The check compares upper-case text, so it keeps one boundary
+slot per OUTPUT character. `Industriestraße 12` above an order therefore grounds
+the ids in that order exactly as `Industriestrasse 12` does, and no id after the
+`ß` shifts.
+
 ### How a quantity is read
 
 A quantity counts whole pieces. That is the only fact the module needs, and it

@@ -492,8 +492,15 @@ def _source_id_index(text):
             # starts the token after it: one boundary at this flat position.
             boundary[-1] = True
             continue
-        flat.append(char.upper())
-        boundary.append(False)
+        # upper() does not return one character for every character: "ß"
+        # becomes "SS", and the PDF ligatures "ﬁ" and "ﬂ" become "FI" and "FL".
+        # One boundary slot per OUTPUT character keeps flat and boundary
+        # aligned; one slot per source character shifted every later id.
+        upper = char.upper()
+        if not upper:
+            continue
+        flat.append(upper)
+        boundary.extend([False] * len(upper))
     boundary[-1] = True
     return "".join(flat), boundary
 

@@ -261,6 +261,10 @@ name", not as a recall rate on real extractor output.
   the hyphen lookalikes a PDF leaves behind (U+2010, U+2011, U+2012, U+2013,
   U+2014, U+2015, soft hyphen U+00AD, zero-width space U+200B), in the value and
   in the source, so `AC–4417` (en dash) is the same id as `AC-4417`.
+- **German text and PDF ligatures do not shift the id index.** `ß` upper-cases
+  to `SS`, and `ﬁ` and `ﬂ` upper-case to `FI` and `FL`. The boundary list keeps
+  one slot per output character, so `Industriestraße 12` above an order grounds
+  the ids in that order exactly as `Industriestrasse 12` does.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.
 - `UNCOVERED_LINK` appends a second item when the position exists but lost its
   link. Treat the pair as one position; it is a prompt to look, not a merge.
