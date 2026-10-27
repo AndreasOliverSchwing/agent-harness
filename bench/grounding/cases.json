@@ -1073,5 +1073,322 @@
         }
       ]
     }
+  },
+  {
+    "id": "de-gtin-01",
+    "error_type": "omit_gtin",
+    "expect_item": 0,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 4 Stück Sechskantschraube M8 verzinkt, Art.-Nr. MW-4417, EAN 2000000000015\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück",
+          "gtin": "2000000000015"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-gtin-02",
+    "error_type": "omit_gtin",
+    "expect_item": 1,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 40 Stück Sechskantmutter M8, Art.-Nr. MW-4419\nPos. 2: 100 Stück Unterlegscheibe 8 mm, Art.-Nr. MW-2201, GTIN 2000000000022\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4419",
+          "description": "Sechskantmutter M8",
+          "quantity": 40,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-2201",
+          "description": "Unterlegscheibe 8 mm",
+          "quantity": 100,
+          "unit": "Stück",
+          "gtin": "2000000000022"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4419",
+          "description": "Sechskantmutter M8",
+          "quantity": 40,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-2201",
+          "description": "Unterlegscheibe 8 mm",
+          "quantity": 100,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-part-01",
+    "error_type": "invented_part_number",
+    "expect_item": 0,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 4 Stück Sechskantschraube M8 verzinkt, Art.-Nr. MW-4417\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4418",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-part-02",
+    "error_type": "invented_part_number",
+    "expect_item": 1,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 4 Stück Sechskantschraube M8 verzinkt, Art.-Nr. MW-4417\nPos. 2: 6 Stück Sechskantmutter M8, Art.-Nr. MW-4419\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-4419",
+          "description": "Sechskantmutter M8",
+          "quantity": 6,
+          "unit": "Stück"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-4420",
+          "description": "Sechskantmutter M8",
+          "quantity": 6,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-link-01",
+    "error_type": "missed_link",
+    "expect_item": 1,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 2 Stück Winkelschleifer 125 mm, Art.-Nr. MW-5520\nPos. 2: 4 Stück https://www.amazon.de/dp/B0DEU00001\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-5520",
+          "description": "Winkelschleifer 125 mm",
+          "quantity": 2,
+          "unit": "Stück"
+        },
+        {
+          "link": "https://www.amazon.de/dp/B0DEU00001",
+          "quantity": 4,
+          "unit": "piece"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-5520",
+          "description": "Winkelschleifer 125 mm",
+          "quantity": 2,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-set-01",
+    "error_type": "set_multiplied",
+    "expect_item": 0,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nSechskantschraube M8, 5er-Pack, Art.-Nr. MW-6601\nMenge: 28 x 5 Stück\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-6601",
+          "description": "Sechskantschraube M8, 5er-Pack",
+          "quantity": 28,
+          "unit": "set"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-6601",
+          "description": "Sechskantschraube M8, 5er-Pack",
+          "quantity": 140,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-variant-01",
+    "error_type": "variant_split",
+    "expect_item": 0,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1  MW-44170 Sechskantschraube M8 verzinkt   4 St.\nPos. 2  MW-44170 Sechskantschraube M8 Edelstahl\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-44170",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "St."
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-44170",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "St."
+        },
+        {
+          "part_number": "MW-44170",
+          "description": "Sechskantschraube M8 Edelstahl"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-redacted-01",
+    "error_type": "redacted_link",
+    "expect_item": 1,
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 1 Stück Schutzbrille klar, Art.-Nr. MW-3302\nPos. 2: 4 Stück https://www.amazon.de/dp/B0DEU00002\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-3302",
+          "description": "Schutzbrille klar",
+          "quantity": 1,
+          "unit": "Stück"
+        },
+        {
+          "link": "https://www.amazon.de/dp/B0DEU00002",
+          "quantity": 4,
+          "unit": "piece"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-3302",
+          "description": "Schutzbrille klar",
+          "quantity": 1,
+          "unit": "Stück"
+        },
+        {
+          "link": "https://www.amazon.de/dp/B0DEU0[Telefon]0002",
+          "quantity": 4,
+          "unit": "piece"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-clean-01",
+    "error_type": "clean",
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: 4 Stück Sechskantschraube M8 verzinkt, Art.-Nr. MW-4417\nPos. 2: 6 Stück Sechskantmutter M8, Art.-Nr. MW-4419\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-4419",
+          "description": "Sechskantmutter M8",
+          "quantity": 6,
+          "unit": "Stück"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück"
+        },
+        {
+          "part_number": "MW-4419",
+          "description": "Sechskantmutter M8",
+          "quantity": 6,
+          "unit": "Stück"
+        }
+      ]
+    }
+  },
+  {
+    "id": "de-clean-02",
+    "error_type": "clean",
+    "source_text": "Muster Werkzeug GmbH\nIndustriestraße 12, 80331 München\nBestellung\nPos. 1: Sechskantschraube M8 verzinkt, Art.-Nr. MW-4417, EAN 2000000000015\nMenge: 4 Stück\nMit freundlichen Grüßen\nA. Muster, Einkauf\n",
+    "gold": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück",
+          "gtin": "2000000000015"
+        }
+      ]
+    },
+    "extractor_output": {
+      "items": [
+        {
+          "part_number": "MW-4417",
+          "description": "Sechskantschraube M8 verzinkt",
+          "quantity": 4,
+          "unit": "Stück",
+          "gtin": "2000000000015"
+        }
+      ]
+    }
   }
 ]

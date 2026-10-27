@@ -29,14 +29,17 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
 ### Fixed
 - **The benchmark figures are measured, not typed.** `bench/grounding/` had no
   `REDACTED_LINK` case, and a catch was scored on the finding code alone, so a
-  flag on the wrong item counted. The set now holds 34 cases — 30 injected
-  errors across six error types plus 4 error-free controls — and a catch needs
-  the expected code on the item the case names (`expect_item`). A test runs the
-  bench in a temp copy and fails when `README.md` or this file quotes a figure
-  the bench does not produce. 30 of 30 injected errors produced a finding with
-  the expected code on the expected item. 0 of 4 error-free controls produced
-  any finding. 18 of 30 injected errors reached the gold extraction exactly;
-  22 of 34 cases did, counting the controls.
+  flag on the wrong item counted. The set now holds 44 cases — 38 injected
+  errors across six error types plus 6 error-free controls — and a catch needs
+  the expected code on the item the case names (`expect_item`). Ten of the cases
+  are German supplier mail: `ß` in the address, `Stück` and `St.` quantities,
+  `Menge:` set lines and a signature block. The first 34 were English-only and
+  stayed green on mail the checks could not read. A test runs the bench in a
+  temp copy and fails when `README.md` or this file quotes a figure the bench
+  does not produce. 38 of 38 injected errors produced a finding with the
+  expected code on the expected item. 0 of 6 error-free controls produced any
+  finding. 23 of 38 injected errors reached the gold extraction exactly; 29 of
+  44 cases did, counting the controls.
 - The quantity-label regex is linear. `\s*:?\s*` split a run of spaces between
   two quantifiers, so every split was tried: 20,000 spaces after `qty` took
   2.9 s. The colon now sits inside one optional group. The pack-marker patterns

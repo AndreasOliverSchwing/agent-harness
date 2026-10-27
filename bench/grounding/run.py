@@ -246,7 +246,9 @@ def render_results(summary, scored):
         "",
         "1. `cases.json` holds %d order requests: %d injected errors across %d"
         " error types, plus %d error-free controls. Each case has"
-        " `source_text`, `gold` and `extractor_output`."
+        " `source_text`, `gold` and `extractor_output`. Ten of them are German"
+        " supplier mail: `ß` in the address, `Stück` and `St.` quantities,"
+        " `Menge:` set lines and a signature block."
         % (total, injected, len(error_types), clean_n),
         "2. `run.py` calls `ground(extractor_output, source_text)` on each case.",
         "3. `caught` asks for the finding code the injected error should raise,"

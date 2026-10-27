@@ -4,7 +4,7 @@ Two tiny inline cases, one with an error and one without. They check the
 scoring functions only: what counts as a catch, what counts as a correction,
 and what counts as a false alarm.
 
-The shipped case file is asserted for its SHAPE, not its scores: 34 cases, one
+The shipped case file is asserted for its SHAPE, not its scores: 44 cases, one
 expected item on every injected error, synthetic data only. The scores
 themselves are measured and reported, because a benchmark that fails when a
 check gets worse cannot also be a regression gate without hiding the number it
@@ -157,20 +157,20 @@ class SummariseTest(unittest.TestCase):
 
 
 class LoadCasesTest(unittest.TestCase):
-    def test_the_shipped_case_file_holds_34_known_cases(self):
+    def test_the_shipped_case_file_holds_44_known_cases(self):
         cases = R.load_cases()
-        self.assertEqual(len(cases), 34)
+        self.assertEqual(len(cases), 44)
         counts = {}
         for case in cases:
             counts[case["error_type"]] = counts.get(case["error_type"], 0) + 1
         self.assertEqual(counts, {
-            "omit_gtin": 6,
-            "invented_part_number": 6,
-            "redacted_link": 4,
-            "missed_link": 6,
-            "set_multiplied": 4,
-            "variant_split": 4,
-            "clean": 4,
+            "omit_gtin": 8,
+            "invented_part_number": 8,
+            "redacted_link": 5,
+            "missed_link": 7,
+            "set_multiplied": 5,
+            "variant_split": 5,
+            "clean": 6,
         })
 
     def test_every_injected_error_names_its_item(self):
@@ -200,13 +200,18 @@ class LoadCasesTest(unittest.TestCase):
 
 
 class RedactedLinkCasesTest(unittest.TestCase):
-    """The four REDACTED_LINK cases, and what each one must prove."""
+    """The four English REDACTED_LINK cases, and what each one must prove.
+
+    The German bench adds a fifth case; it is scored by GermanCasesTest, which
+    holds the German set to its own rules.
+    """
 
     def setUp(self):
         self.cases = {case["id"]: case for case in R.load_cases()
-                      if case["error_type"] == "redacted_link"}
+                      if case["error_type"] == "redacted_link"
+                      and not case["id"].startswith("de-")}
 
-    def test_four_redacted_link_cases_ship(self):
+    def test_four_english_redacted_link_cases_ship(self):
         self.assertEqual(len(self.cases), 4)
 
     def test_a_shared_prefix_stays_flagged_and_is_not_restored(self):
@@ -366,7 +371,7 @@ class DocFiguresTest(unittest.TestCase):
     def test_the_readme_states_how_many_cases_are_errors_and_controls(self):
         figures = self._figures()
         pattern = (r"holds (\d+) invented order requests: (\d+) injected "
-                   r"errors across (\w+) error types, four to six cases each, "
+                   r"errors across (\w+) error types, five to eight cases each, "
                    r"plus (\d+) error-free controls\.")
         match = re.search(pattern, self._flat(self.readme))
         self.assertIsNotNone(match, "README.md does not state the case counts")
@@ -450,6 +455,69 @@ class CasePrivacyTest(unittest.TestCase):
                 if len(bare) in G.GTIN_LENGTHS:
                     self.assertFalse(G.gtin_valid(bare),
                                      "%s: %s" % (case["id"], bare))
+
+
+class GermanCasesTest(unittest.TestCase):
+    """The bench must hold German supplier mail, not only English mail.
+
+    The recheck of 2026-10-27 found 14 defects on ordinary German order mail
+    while the bench stayed green, because 0 of its 34 cases held "Stück",
+    "Menge" or "ß". These cases keep that gap closed.
+
+    The English cases are measured and reported, never gated: a benchmark that
+    fails when a check gets worse cannot also report the number it exists to
+    report. The German cases are the exception. They exist for one reason, to
+    prove German mail is handled, and a German case that stops being caught
+    would put the bench back where it was: green on mail it never read.
+    """
+
+    GERMAN_MARKS = ("ß", "Stück", "Menge:", "St.")
+    SIGNATURE = "Mit freundlichen Grüßen"
+
+    def setUp(self):
+        self.cases = [case for case in R.load_cases()
+                      if case["id"].startswith("de-")]
+
+    def test_at_least_eight_german_error_cases_ship(self):
+        errors = [case for case in self.cases
+                  if case["error_type"] != "clean"]
+        self.assertGreaterEqual(len(errors), 8)
+
+    def test_two_german_clean_controls_ship(self):
+        controls = [case for case in self.cases
+                    if case["error_type"] == "clean"]
+        self.assertEqual(len(controls), 2)
+
+    def test_the_german_cases_cover_every_error_type(self):
+        types = {case["error_type"] for case in self.cases
+                 if case["error_type"] != "clean"}
+        self.assertEqual(types, set(R.EXPECTED_CODES) - {"clean"})
+
+    def test_every_german_case_holds_a_sharp_s_and_a_signature(self):
+        for case in self.cases:
+            self.assertIn("ß", case["source_text"], case["id"])
+            self.assertIn(self.SIGNATURE, case["source_text"], case["id"])
+
+    def test_the_german_cases_use_the_german_quantity_words(self):
+        text = "".join(case["source_text"] for case in self.cases)
+        for mark in self.GERMAN_MARKS:
+            self.assertIn(mark, text)
+
+    def test_every_german_error_case_is_caught_on_its_own_item(self):
+        for case in self.cases:
+            if case["error_type"] == "clean":
+                continue
+            result = R.score_case(case)
+            self.assertTrue(result["caught"], case["id"])
+            self.assertFalse(result["false_alarm"], case["id"])
+
+    def test_every_german_control_produces_no_finding(self):
+        for case in self.cases:
+            if case["error_type"] != "clean":
+                continue
+            result = R.score_case(case)
+            self.assertEqual(result["codes"], [], case["id"])
+            self.assertTrue(result["corrected"], case["id"])
 
 
 if __name__ == "__main__":
