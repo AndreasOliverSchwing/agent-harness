@@ -73,7 +73,10 @@ Codes and actions in this module:
                                  old_value the id. The item stays; uncertain is
                                  set True.
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
-                                 extraction. It is attached to the best-matching
+                                 extraction. A digit run counts as a GTIN only
+                                 when its line names one (GTIN, EAN, UPC,
+                                 Barcode, Strichcode) and the run is not inside
+                                 a link. It is attached to the best-matching
                                  item, which is marked uncertain. field is
                                  "gtin" or "other_ids", new_value the GTIN.
     MISSING_GTIN  / "reported"   same, but no item could take it. The finding
@@ -144,6 +147,17 @@ MIN_WORD_LEN = 4
 # Share of the shorter word set that two texts must have in common. Measured
 # over the shorter set so a long source line cannot drown a short description.
 MATCH_RATIO = 0.5
+
+# Words that name no product. A GTIN line carries them ("GTIN ...", "part ...")
+# and a description may carry them too, so an overlap on one of them alone
+# proves nothing and must not move a GTIN to another product.
+GENERIC_WORDS = frozenset((
+    "part", "parts", "item", "items", "number", "nummer", "artikel",
+    "gtin", "ean", "upc", "barcode", "strichcode",
+    "quantity", "menge", "qty", "piece", "pieces", "stueck", "stück",
+    "order", "bestellung", "supply", "confirmation", "total", "price",
+    "preis", "product", "produkt", "please", "siehe",
+))
 
 # A placeholder earlier than this is not a redacted product path. Every product
 # path this module recognises is longer than 12 characters, so a "[" in the
@@ -232,6 +246,13 @@ MARKETPLACE_DOMAINS = {
     "aliexpress.com": "aliexpress",
     "aliexpress.us": "aliexpress",
 }
+
+# A line that names a GTIN. Without one of these words the module cannot tell a
+# GTIN from a phone number, an order number or a marketplace id: "Tel. +49 89
+# 12345670" and "Order 20261023" both carry a valid check digit. German and
+# English, because a supplier writes one or the other.
+_GTIN_KEYWORD = re.compile(
+    r"\b(?:gtin|ean|upc|bar\s*code|strichcode)\b", re.IGNORECASE)
 
 # A quantity at the start of a line, with or without a unit word:
 # "4x", "4 x", "4 pcs", "4 Stück".
@@ -897,26 +918,62 @@ def _merge_variant_values(survivor, variant):
     return conflicts
 
 
+def _gtin_candidates(source_text):
+    """Return [(gtin, line)] for the GTINs the source marks as GTINs, in order.
+
+    Two rules decide what counts, and both exist because a digit run alone
+    proves nothing:
+
+    - The line must carry a GTIN keyword: GTIN, EAN, UPC, Barcode, Strichcode.
+      "Tel. +49 89 12345670" and "Order 20261023" are valid check digits and
+      are not GTINs.
+    - The run must not sit inside a link. A marketplace item number in a URL
+      is a product position, not a GTIN.
+
+    The same number written twice is returned once, compared as a GTIN-14.
+    """
+    found = []
+    seen = set()
+    for line in source_text.splitlines():
+        if not _GTIN_KEYWORD.search(line):
+            continue
+        spans = [match.span() for match in _URL.finditer(line)]
+        for match in _DIGIT_RUN.finditer(line):
+            run = match.group(0)
+            if len(run) not in GTIN_LENGTHS or not gtin_valid(run):
+                continue
+            if any(start <= match.start() < end for start, end in spans):
+                continue
+            form = gtin14(run)
+            if form in seen:
+                continue
+            seen.add(form)
+            found.append((run, line.strip()))
+    return found
+
+
 def _check_missing_gtins(items, origins, source_text):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
 
     The target item is the one whose description shares at least MATCH_RATIO of
-    its words with the source line holding the GTIN. When no description is
-    close enough and exactly one item exists, that item takes the GTIN: with a
-    single item there is no wrong item to pick. Otherwise the finding is
-    reported with item_index None and nothing is changed.
+    its content words with the source line holding the GTIN. Generic words do
+    not count: "part" occurs in half the descriptions and in half the source
+    lines, so an overlap on it alone must not move a GTIN to another product.
+
+    When no description is close enough and exactly one item exists, that item
+    takes the GTIN: with a single item there is no wrong item to pick.
+    Otherwise the finding is reported with item_index None and nothing is
+    changed.
     """
     findings = []
-    gtins = find_gtins(source_text)
-    if not gtins:
+    candidates = _gtin_candidates(source_text)
+    if not candidates:
         return findings
 
-    lines = source_text.splitlines()
     carried = _carried_ids(items)
-    for gtin in gtins:
+    for gtin, line in candidates:
         if gtin in carried:
             continue
-        line = _line_with(lines, gtin)
         index = _best_item(items, line)
         if index is None:
             findings.append(_finding(
@@ -974,19 +1031,18 @@ def _carried_ids(items):
     return carried
 
 
-def _line_with(lines, needle):
-    """Return the first source line containing needle, stripped. "" if none."""
-    for line in lines:
-        if needle in line:
-            return line.strip()
-    return ""
-
-
 def _words(text):
-    """Lower-case words of MIN_WORD_LEN or more letters. A set, for overlap."""
+    """Lower-case content words of MIN_WORD_LEN or more letters, as a set.
+
+    Generic words are dropped. "part", "item", "quantity" and "GTIN" name no
+    product, and they occur in descriptions and in source lines alike, so an
+    overlap on one of them alone must not decide where a GTIN goes.
+    """
     if not isinstance(text, str):
         return set()
-    return set(w.lower() for w in _WORD.findall(text) if len(w) >= MIN_WORD_LEN)
+    return set(word.lower() for word in _WORD.findall(text)
+               if len(word) >= MIN_WORD_LEN
+               and word.lower() not in GENERIC_WORDS)
 
 
 def _overlap(left, right):

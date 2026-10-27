@@ -378,6 +378,75 @@ class GroundMissingGtinTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["other_ids"], ["4006381333931"])
 
 
+class GtinKeywordRuleTest(unittest.TestCase):
+    """A digit run is a GTIN only with a GTIN keyword on its line (QA 6).
+
+    Eight to fourteen digits with a valid check digit is not enough. A phone
+    number, an order number and a marketplace id all pass that test. The line
+    must name the number: GTIN, EAN, UPC, Barcode or Strichcode. A run inside a
+    link is never a GTIN, keyword or not.
+    """
+
+    def test_ground_does_not_attach_a_phone_number(self):
+        source = "Northwind Supply\nTel. +49 89 12345670\n4 x Widget assembly\n"
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_ground_does_not_attach_an_order_number(self):
+        source = "Acme Tools\nOrder 20261023\n4 x Widget assembly\n"
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_ground_does_not_attach_a_digit_run_inside_a_link(self):
+        # The line carries the keyword; the only digit run on it is in the URL.
+        source = ("Acme Tools\n4 x Widget assembly, EAN as printed in the "
+                  "shop: https://shop.example.com/p/4012345678901\n")
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertNotIn("gtin", checked["items"][0])
+
+    def test_ground_attaches_a_gtin_with_an_english_keyword(self):
+        source = "Acme Tools\n4 x Widget assembly  EAN 4012345678901\n"
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings], ["attached"])
+        self.assertEqual(findings[0]["new_value"], "4012345678901")
+        self.assertEqual(checked["items"][0]["gtin"], "4012345678901")
+
+    def test_ground_attaches_a_gtin_with_a_german_keyword(self):
+        source = "Acme Tools\n4 x Widget assembly  Strichcode 4012345678901\n"
+        extraction = {"items": [{"description": "Widget assembly"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings], ["attached"])
+        self.assertEqual(checked["items"][0]["gtin"], "4012345678901")
+
+    def test_ground_does_not_move_a_gtin_on_a_generic_word_alone(self):
+        # Both descriptions hold "part" and the GTIN line holds "part" too. An
+        # overlap on that word alone must not decide where the GTIN goes: the
+        # line names no product, so the GTIN is reported, not attached.
+        source = ("Acme Tools\n4 x Spare part bracket\n"
+                  "GTIN 4006381333931, part of set\n")
+        extraction = {"items": [
+            {"description": "Spare part bracket"},
+            {"description": "Replacement part kit"},
+        ]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(len(findings), 1)
+        finding = findings[0]
+        self.assertEqual(finding["code"], "MISSING_GTIN")
+        self.assertEqual(finding["action"], "reported")
+        self.assertIsNone(finding["item_index"])
+        self.assertIsNone(finding["new_value"])
+        self.assertIn("4006381333931", finding["evidence"])
+        self.assertNotIn("gtin", checked["items"][0])
+        self.assertNotIn("gtin", checked["items"][1])
+
+
 class GroundContractTest(unittest.TestCase):
     """The promises ground() makes to every caller."""
 

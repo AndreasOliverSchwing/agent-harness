@@ -140,6 +140,29 @@ and `notamazon.de` are other people's domains; a product id read from them would
 point at a product that cannot be checked, and `UNCOVERED_LINK` would then append
 an item for a link that is not a shop's product page at all.
 
+### Which digit runs are GTINs
+
+A digit run of 8, 12, 13 or 14 characters with a valid GS1 check digit is a
+candidate, not a GTIN. `MISSING_GTIN` needs two more conditions:
+
+- **The line names it.** The line the run sits on must carry `GTIN`, `EAN`,
+  `UPC`, `Barcode`, `Strichcode` or `bar code` (German and English, any case).
+  `Tel. +49 89 12345670` and `Order 20261023` both pass the check digit and are
+  not GTINs. Without the keyword there is no way to tell them apart.
+- **It is not inside a link.** A 13-digit marketplace item number in a URL is a
+  product position, not a GTIN. The rule is per occurrence: the same number
+  outside the link on the same line still counts.
+
+A supplier that prints a GTIN with no keyword gets no attachment. That is a
+deliberate loss: a wrong GTIN is worse than a missing one, because the quote then
+prices another product.
+
+The GTIN is then attached to the item whose description shares at least half of
+its content words with the line. Generic words do not count (`part`, `item`,
+`quantity`, `GTIN`, `Barcode`, …). An overlap on "part" alone decides nothing,
+so a line that names no product produces `reported` with `item_index: None`
+rather than a GTIN on the wrong item.
+
 ### How an id is grounded
 
 `UNGROUNDED_ID` grounds an id on a token boundary. A source that holds

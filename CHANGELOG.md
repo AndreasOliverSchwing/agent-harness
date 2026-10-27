@@ -21,6 +21,12 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   `other_ids` (`["ASIN:B0TEST1234"]`), not in `part_number` or `description`.
 
 ### Fixed
+- `MISSING_GTIN` attaches a digit run only when the source names it. The line
+  must carry `GTIN`, `EAN`, `UPC`, `Barcode`, `Strichcode` or `bar code`, and the
+  run must not sit inside a link. A phone number (`Tel. +49 89 12345670`), an
+  order number (`Order 20261023`) and a 13-digit marketplace id in a URL are no
+  longer written into `gtin`. The GTIN-to-item match also drops generic words, so
+  an overlap on "part" alone no longer moves a GTIN to the wrong item.
 - `UNGROUNDED_ID` grounds an id on a token boundary, not as a substring. A
   source that holds `AC-4417` no longer grounds `AC-441`, `NW-22019` no longer
   grounds `NW-2201`, and the date `2026-10-26` no longer grounds `2610`. The
