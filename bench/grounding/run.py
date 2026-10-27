@@ -9,10 +9,11 @@ library only, no network, no LLM.
 Three scores per case:
 
     caught      a finding with the code the injected error should produce,
-                on the item the case names in "expect_item"
+                on the item the case names in "expect_item", in the DEFAULT
+                mode: what a caller who passes no flag sees
     corrected   the checked output equals gold once "uncertain" and "note"
-                are removed from every item
-    false alarm any finding on a case that holds no error
+                are removed, with apply=True: what the module writes
+    false alarm any finding on a case that holds no error, in the default mode
 
 The scores measure the CHECKS, not an extractor. The cases are synthetic and
 the errors were injected by hand, so the numbers say what the checks can and
@@ -138,8 +139,19 @@ def is_false_alarm(case, findings):
 
 
 def score_case(case):
-    """Run ground() on one case and return its scores as a dict."""
-    checked, findings = G.ground(case["extractor_output"], case["source_text"])
+    """Run ground() on one case and return its scores as a dict.
+
+    Two modes, because the module has two. `caught` and `false_alarm` read the
+    default: a suggestion is what a producer sees before anything is written,
+    and a false alarm is any finding at all on a case that holds no error.
+    `corrected` reads apply=True: it asks what the module writes when the caller
+    lets it write. The finding codes are the default's, because that is the run
+    a caller who passes no flag gets.
+    """
+    _suggested, findings = G.ground(case["extractor_output"],
+                                    case["source_text"])
+    checked, _written = G.ground(case["extractor_output"], case["source_text"],
+                                 apply=True)
     return {
         "id": case["id"],
         "error_type": case["error_type"],
@@ -250,7 +262,9 @@ def render_results(summary, scored):
         " supplier mail: `ß` in the address, `Stück` and `St.` quantities,"
         " `Menge:` set lines and a signature block."
         % (total, injected, len(error_types), clean_n),
-        "2. `run.py` calls `ground(extractor_output, source_text)` on each case.",
+        "2. `run.py` calls `ground(extractor_output, source_text)` twice per"
+        " case: with no flag for `caught` and `false alarm`, and with"
+        " `apply=True` for `corrected`.",
         "3. `caught` asks for the finding code the injected error should raise,"
         " **on the item the case names** in `expect_item`: `MISSING_GTIN`,"
         " `UNGROUNDED_ID`, `REDACTED_LINK`, `UNCOVERED_LINK`,"

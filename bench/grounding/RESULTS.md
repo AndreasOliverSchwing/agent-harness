@@ -22,7 +22,7 @@ The `clean` row injects no error, so it has nothing to catch. Its `corrected` co
 ## Method
 
 1. `cases.json` holds 44 order requests: 38 injected errors across 6 error types, plus 6 error-free controls. Each case has `source_text`, `gold` and `extractor_output`. Ten of them are German supplier mail: `ß` in the address, `Stück` and `St.` quantities, `Menge:` set lines and a signature block.
-2. `run.py` calls `ground(extractor_output, source_text)` on each case.
+2. `run.py` calls `ground(extractor_output, source_text)` twice per case: with no flag for `caught` and `false alarm`, and with `apply=True` for `corrected`.
 3. `caught` asks for the finding code the injected error should raise, **on the item the case names** in `expect_item`: `MISSING_GTIN`, `UNGROUNDED_ID`, `REDACTED_LINK`, `UNCOVERED_LINK`, `SET_MULTIPLIED` or `VARIANT_SPLIT`. A finding with the right code on another item is not a catch.
 4. `corrected` compares the returned items with `gold`. The comparison drops `uncertain` and `note`, because `ground()` sets them to explain itself and they are not extraction values. A case whose right answer is to leave the extraction alone counts as corrected when nothing changed, so `corrected` alone never proves that a check ran: read it with `caught`.
 5. `false alarm` counts the 6 error-free cases where any finding appeared at all.
