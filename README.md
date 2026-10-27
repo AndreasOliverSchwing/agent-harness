@@ -265,6 +265,12 @@ name", not as a recall rate on real extractor output.
   the hyphen lookalikes a PDF leaves behind (U+2010, U+2011, U+2012, U+2013,
   U+2014, U+2015, soft hyphen U+00AD, zero-width space U+200B), in the value and
   in the source, so `AC–4417` (en dash) is the same id as `AC-4417`.
+- **Only a joiner may sit inside a grounded id.** Any other punctuation ends the
+  token, so `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`, `AC-4417 | 8`
+  does not ground `AC-4417-8`, and `Art.-Nr. 4417 (10 Stück)` does not ground
+  `4417-10`. A joiner between two digits belongs to the number it splits, so
+  `2026-10-26` does not ground `1026` either: the two are one number, not two
+  ids.
 - **German text and PDF ligatures do not shift the id index.** `ß` upper-cases
   to `SS`, and `ﬁ` and `ﬂ` upper-case to `FI` and `FL`. The boundary list keeps
   one slot per output character, so `Industriestraße 12` above an order grounds

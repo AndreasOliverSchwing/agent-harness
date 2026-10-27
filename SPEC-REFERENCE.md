@@ -224,6 +224,17 @@ and is removed from the value, so `AC-4417`, `AC 4417`, `AC.4417` and `AC–4417
 that is not a joiner is dropped from the value too, so `(AC-4417)` means
 `AC-4417`.
 
+Only a joiner may sit INSIDE a grounded id. Any other punctuation ends the token,
+so a match that runs through `,` `|` `(` `)` `;` or `:` grounds nothing:
+`Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`, `AC-4417 | 8 | Stück` does
+not ground `AC-4417-8`, and `Art.-Nr. 4417 (10 Stück)` does not ground `4417-10`.
+
+A joiner between two digits belongs to the number it splits. The `-` in
+`2026-10-26` ties `10` to `26`, so no id may start or end between them: `1026` is
+the tail of that number and is flagged, while the whole `2026-10-26` is grounded.
+A joiner after a letter ties nothing (`AC-4417`), and whitespace ties nothing, so
+`4417` in `AC-4417` and `Pos. 1 4417` both still ground their id.
+
 A German `ß` and the PDF ligatures `ﬁ` and `ﬂ` upper-case to two characters
 (`SS`, `FI`, `FL`). The check compares upper-case text, so it keeps one boundary
 slot per OUTPUT character. `Industriestraße 12` above an order therefore grounds

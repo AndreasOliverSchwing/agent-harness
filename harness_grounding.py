@@ -507,7 +507,7 @@ def _id_form(value):
 
 
 def _source_id_index(text):
-    """Return (flat, boundary) for a source text.
+    """Return (flat, boundary, hard, glue) for a source text.
 
     flat is the text upper-cased with every character that is not a letter or a
     digit removed. boundary[i] is True when flat position i is a token boundary
@@ -517,14 +517,39 @@ def _source_id_index(text):
     The boundaries are the point. A source that holds "AC-4417" also holds the
     substring "AC-441", but not the token: the character after it is a digit, so
     that occurrence is inside a token and grounds nothing.
+
+    hard lists, in order, the flat positions where punctuation that is NOT a
+    documented joiner sits: ",", "|", "(", ")", ";", ":". No id may run through
+    one of them, so "Pos. 3: AC-4417, 8 Stück" does not ground "AC-44178".
+
+    glue[i] is True when flat position i is a digit that a joiner ties to the
+    digit before it. The two are one number: the "-" in "2026-10-26" glues "10"
+    to "26", so "1026" is the tail of that number and not an id. A joiner after
+    a letter ties nothing ("AC-4417"), and whitespace ties nothing either, so
+    "Pos. 1 4417" still holds the id "4417".
     """
     flat = []
     boundary = [True]
+    hard = []
+    glue = []
+    width = 0            # the number of flat characters, not of list entries
+    previous = None      # the last letter or digit read, upper-cased
+    joined = False       # a joiner stands between `previous` and the next char
     for char in text:
         if not char.isalnum():
             # A joiner or any other separator ends the token before it and
             # starts the token after it: one boundary at this flat position.
             boundary[-1] = True
+            if char in _ID_JOINER_SET:
+                if previous is not None:
+                    joined = True
+            else:
+                if not char.isspace():
+                    # Punctuation that is not a joiner ends the token for good.
+                    if not hard or hard[-1] != width:
+                        hard.append(width)
+                previous = None
+                joined = False
             continue
         # upper() does not return one character for every character: "ß"
         # becomes "SS", and the PDF ligatures "ﬁ" and "ﬂ" become "FI" and "FL".
@@ -533,22 +558,47 @@ def _source_id_index(text):
         upper = char.upper()
         if not upper:
             continue
+        tied = (joined and previous is not None and previous.isdigit()
+                and upper[0].isdigit())
         flat.append(upper)
         boundary.extend([False] * len(upper))
+        glue.extend([tied] * len(upper))
+        width += len(upper)
+        previous = upper[-1]
+        joined = False
     boundary[-1] = True
-    return "".join(flat), boundary
+    return "".join(flat), boundary, hard, glue
 
 
-def _id_occurs(flat_value, flat_source, boundary):
-    """True when flat_value occurs in flat_source on token boundaries."""
+def _id_occurs(flat_value, flat_source, boundary, hard=(), glue=()):
+    """True when flat_value occurs in flat_source as a whole id.
+
+    The match must start and end on a token boundary, must not run through
+    punctuation that is not a documented joiner, and must not start or end
+    inside a number that a joiner ties together.
+    """
     if not flat_value:
         return False
+    size = len(flat_value)
     start = flat_source.find(flat_value)
     while start != -1:
-        if boundary[start] and boundary[start + len(flat_value)]:
+        end = start + size
+        if boundary[start] and boundary[end] and _id_span_is_clean(
+                start, end, hard, glue):
             return True
         start = flat_source.find(flat_value, start + 1)
     return False
+
+
+def _id_span_is_clean(start, end, hard, glue):
+    """True when the flat span [start, end) holds no hard break and no glue."""
+    if glue and (glue[start] or (end < len(glue) and glue[end])):
+        return False
+    if hard:
+        index = bisect_right(hard, start)
+        if index < len(hard) and hard[index] < end:
+            return False
+    return True
 
 
 def find_links(text):
@@ -715,9 +765,14 @@ def _check_ids(items, origins, source_text):
     source that holds "AC-4417", and "2610" is not grounded by the date
     2026-10-26. A gtin is compared as a GTIN-14, so the same number with or
     without its leading zeros is grounded either way.
+
+    Only a documented joiner may sit inside a grounded id. Any other punctuation
+    ends the token, so "AC-44178" is not grounded by "Pos. 3: AC-4417, 8 Stück".
+    A joiner between two digits ties them into one number, so "1026" is not
+    grounded by "2026-10-26".
     """
     findings = []
-    flat_source, boundary = _source_id_index(source_text)
+    flat_source, boundary, hard, glue = _source_id_index(source_text)
     source_gtins14 = set()
     for gtin in find_gtins(source_text):
         form = gtin14(gtin)
@@ -735,7 +790,8 @@ def _check_ids(items, origins, source_text):
                 if form is not None and form in source_gtins14:
                     continue
             flat = _id_form(raw)
-            if len(flat) < MIN_ID_LEN or _id_occurs(flat, flat_source, boundary):
+            if len(flat) < MIN_ID_LEN or _id_occurs(
+                    flat, flat_source, boundary, hard, glue):
                 continue
             item["uncertain"] = True
             findings.append(_finding(
@@ -1292,7 +1348,7 @@ def _gtin_owner(items, origins, line, previous=""):
     product, so it cannot own a GTIN.
     """
     match_line = previous or line
-    flat, boundary = _source_id_index(match_line)
+    flat, boundary, hard, glue = _source_id_index(match_line)
     by_part = []
     for index, item in enumerate(items):
         if not isinstance(item, dict) or origins[index] is None:
@@ -1300,7 +1356,7 @@ def _gtin_owner(items, origins, line, previous=""):
         form = _id_form(item.get("part_number"))
         if len(form) < MIN_ID_LEN:
             continue
-        if _id_occurs(form, flat, boundary):
+        if _id_occurs(form, flat, boundary, hard, glue):
             by_part.append(index)
     if len(by_part) == 1:
         return by_part[0], "the line names that item's part number"
@@ -1700,7 +1756,7 @@ def _line_facts(bodies):
     """
     facts = []
     for body in bodies:
-        flat, boundary = _source_id_index(body)
+        flat, boundary, hard, _glue = _source_id_index(body)
         gtins14 = set()
         for gtin in find_gtins(body):
             form = gtin14(gtin)
@@ -1709,6 +1765,7 @@ def _line_facts(bodies):
         facts.append({
             "flat": flat,
             "boundary": boundary,
+            "hard": hard,
             "packs": _marked_pack_sizes(body),
             "words": _words(body),
             "links": find_links(body),
@@ -1721,23 +1778,30 @@ def _line_id_forms(fact, max_length):
     """Return every id form the line holds on a token boundary.
 
     A match must start and end on a token boundary, so a matchable form is a
-    run of the line's letters and digits, or several runs in a row. Only forms
-    no longer than the longest id in the mail are built, which bounds the work
-    on a line of many words.
+    run of the line's letters and digits, or several runs in a row. A form may
+    not run through punctuation that is not a documented joiner, for the same
+    reason UNGROUNDED_ID refuses one: "AC-4417, 8" does not hold "AC-44178".
+    Only forms no longer than the longest id in the mail are built, which bounds
+    the work on a line of many words.
     """
     flat = fact["flat"]
+    hard = fact["hard"]
     stops = [position for position, flag in enumerate(fact["boundary"]) if flag]
-    runs = [flat[stops[index]:stops[index + 1]]
+    runs = [(stops[index], stops[index + 1])
             for index in range(len(stops) - 1)]
     forms = set()
     for first in range(len(runs)):
-        text = runs[first]
+        start, end = runs[first]
+        text = flat[start:end]
         if len(text) > max_length:
             continue
         forms.add(text)
         for second in range(first + 1, len(runs)):
-            text += runs[second]
+            text += flat[runs[second][0]:runs[second][1]]
             if len(text) > max_length:
+                break
+            index = bisect_right(hard, start)
+            if index < len(hard) and hard[index] < runs[second][1]:
                 break
             forms.add(text)
     return forms

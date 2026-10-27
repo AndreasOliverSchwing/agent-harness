@@ -306,6 +306,62 @@ class GroundIdTokenBoundaryTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class IdTokenPunctuationTest(unittest.TestCase):
+    """S7: only a documented joiner may sit inside a grounded id.
+
+    Punctuation that is not a joiner ("," "|" "(" ")" ";" ":") ends a token, so
+    an id that only occurs by running through one of them is not grounded.
+    A joiner between two digits belongs to the number, so a digit run may not
+    start or end inside it either.
+    """
+
+    def test_a_comma_does_not_ground_the_digits_of_the_next_position(self):
+        # "Pos. 3: AC-4417, 8 Stück" is a position and a quantity. AC-44178 is
+        # not in the source.
+        source = "Pos. 3: AC-4417, 8 St\u00fcck\n"
+        extraction = {"items": [{"part_number": "AC-44178", "quantity": 1}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+        self.assertEqual(findings[0]["old_value"], "AC-44178")
+        self.assertTrue(checked["items"][0]["uncertain"])
+
+    def test_a_pipe_does_not_join_two_cells_of_a_row(self):
+        source = "AC-4417 | 8 | St\u00fcck\n"
+        extraction = {"items": [{"part_number": "AC-4417-8", "quantity": 1}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+        self.assertEqual(findings[0]["old_value"], "AC-4417-8")
+
+    def test_a_bracket_does_not_join_an_id_to_the_quantity_beside_it(self):
+        source = "Art.-Nr. 4417 (10 St\u00fcck)\n"
+        extraction = {"items": [{"part_number": "4417-10", "quantity": 1}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+
+    def test_a_joiner_between_two_digits_is_one_number(self):
+        # The date is one number. "1026" is the tail of it, not an id.
+        source = "Order date 2026-10-26\n"
+        extraction = {"items": [{"part_number": "1026"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
+        self.assertEqual(findings[0]["old_value"], "1026")
+
+    def test_the_whole_date_is_still_grounded(self):
+        # The rule stops a fragment, not a whole number.
+        source = "Order date 2026-10-26\n"
+        extraction = {"items": [{"part_number": "2026-10-26"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+    def test_a_joiner_after_a_letter_still_joins_the_id(self):
+        # "AC-4417" is one id and "4417" is a whole token of it, so the rule
+        # that stops the date fragment must not flag it.
+        source = "Acme Tools\n4 x Hex bolt M8, part AC-4417\n"
+        extraction = {"items": [{"part_number": "4417"}]}
+        _checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+
+
 class GermanTextAlignmentTest(unittest.TestCase):
     """B1: a character that upper-cases to two characters must not shift ids.
 
@@ -318,8 +374,11 @@ class GermanTextAlignmentTest(unittest.TestCase):
     def test_the_boundary_list_stays_aligned_with_the_flat_text(self):
         for text in ("Straße", "Proﬁl", "Anﬂanschplatte",
                      "Grüße aus der Lindenstraße"):
-            flat, boundary = G._source_id_index(text)
+            flat, boundary, hard, glue = G._source_id_index(text)
             self.assertEqual(len(boundary), len(flat) + 1, text)
+            self.assertEqual(len(glue), len(flat), text)
+            for position in hard:
+                self.assertLessEqual(position, len(flat), text)
 
     def test_a_sharp_s_in_the_address_does_not_flag_a_grounded_id(self):
         # B1 (a) from the 2026-10-27 recheck: spelled "strasse" there is no
