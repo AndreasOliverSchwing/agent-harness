@@ -1633,6 +1633,70 @@ class UncoveredLinkQuantityTest(unittest.TestCase):
                 self.assertEqual(self._quantities(source, apply), [2, 3])
 
 
+class UncoveredLinkUnitTest(unittest.TestCase):
+    """Fix round 3, card 3.3: an appended item states the source's unit (S6').
+
+    An item appended for an uncovered link used to say unit "piece" whatever the
+    source wrote, and the quantity patterns read `Paar`, `VE`, `Pack` and `kg` as
+    piece words. Only two units are known: a piece word (or no unit word) is
+    "piece", and `set`/`sets` is "set". Any other word is not a unit this module
+    can name, so the link gets no quantity: nothing is suggested and nothing is
+    written.
+
+    The quantity is only suggested by default and written with apply=True, so
+    every input is read in both modes.
+    """
+
+    A = "https://www.amazon.de/dp/B0TESTAAA1"
+
+    def _read(self, source, apply):
+        """Return (appended items, suggested findings) for one mode."""
+        checked, findings = G.ground({"items": []}, source, apply=apply)
+        return checked["items"], [f for f in findings
+                                  if f["action"] == "suggested"]
+
+    def _assert_no_quantity(self, source):
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                items, suggested = self._read(source, apply)
+                self.assertEqual(len(items), 1)
+                self.assertEqual(suggested, [])
+                self.assertIsNone(items[0].get("quantity"))
+
+    def test_a_paar_input_gives_no_quantity(self):
+        self._assert_no_quantity("2 Paar %s" % self.A)
+
+    def test_a_ve_input_gives_no_quantity(self):
+        self._assert_no_quantity("3 VE %s" % self.A)
+
+    def test_a_kg_line_above_gives_no_quantity(self):
+        self._assert_no_quantity("1,5 kg\n%s" % self.A)
+
+    def test_a_kg_prefix_gives_no_quantity(self):
+        self._assert_no_quantity("0,250 kg %s" % self.A)
+
+    def test_a_set_input_states_the_unit_set(self):
+        source = "%s\n2 Sets" % self.A
+        items, suggested = self._read(source, False)
+        self.assertEqual(len(suggested), 1)
+        self.assertEqual(suggested[0]["new_value"], 2)
+        self.assertIn('"set"', suggested[0]["evidence"])
+        items, _suggested = self._read(source, True)
+        self.assertEqual(items[0]["quantity"], 2)
+        self.assertEqual(items[0]["unit"], "set")
+
+    def test_a_piece_word_states_the_unit_piece(self):
+        for source in ("2 St\u00fcck %s" % self.A, "%s\n2 pcs" % self.A):
+            with self.subTest(source=source):
+                items, suggested = self._read(source, False)
+                self.assertEqual(len(suggested), 1)
+                self.assertEqual(suggested[0]["new_value"], 2)
+                self.assertIn('"piece"', suggested[0]["evidence"])
+                items, _suggested = self._read(source, True)
+                self.assertEqual(items[0]["quantity"], 2)
+                self.assertEqual(items[0]["unit"], "piece")
+
+
 class GroundRedactedLinkTest(unittest.TestCase):
     """REDACTED_LINK: restore a product link that a redaction cut in two."""
 
@@ -2496,12 +2560,18 @@ class QuantityFormatTest(unittest.TestCase):
         self.assertEqual(G._to_number("2 St\u00fcck"), 2)
 
     def test_german_and_english_unit_words_parse(self):
-        # B2: a supplier writes "St.", "Stck.", "ST", "VE", "Paar", "Pack",
-        # "kg" and "Stueck". Each is a unit word, not part of the number.
-        for text in ("2 St.", "2 Stck.", "2 ST", "2 VE", "2 Paar", "2 Pack",
-                     "2 Stueck", "2 Stück", "2 stk."):
+        # B2: a supplier writes "St.", "Stck.", "ST" and "Stueck". Each is a
+        # piece word, not part of the number.
+        for text in ("2 St.", "2 Stck.", "2 ST", "2 Stueck", "2 St\u00fcck",
+                     "2 stk.", "2 pcs", "2 pieces", "2 units", "2 x"):
             self.assertEqual(G._to_number(text), 2, text)
-        self.assertEqual(G._to_number("2,5 kg"), 2.5)
+
+    def test_a_unit_word_this_module_cannot_name_is_not_a_quantity(self):
+        # S6': "VE", "Paar", "Pack" and "kg" do not name a count of pieces, so
+        # a value that carries one holds no quantity this module can read.
+        # Before, every one of them read as a number of pieces.
+        for text in ("2 VE", "2 Paar", "2 Pack", "2,5 kg"):
+            self.assertIsNone(G._to_number(text), text)
 
     def test_decimal_quantity_keeps_the_variant_line(self):
         extraction = {"items": [

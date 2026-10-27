@@ -134,7 +134,7 @@ each records a finding with action `suggested`:
   `input_index` `None`. Its evidence names the unit word `apply=True` writes.
 
 `apply=True` restores the writing behaviour: `corrected`, `attached`, and `added`
-with a quantity and unit `piece`. A `reported` MISSING_GTIN finding is the same in
+with the source's quantity and unit. A `reported` MISSING_GTIN finding is the same in
 both modes, because neither writes anything. VARIANT_SPLIT, REDACTED_LINK and
 UNGROUNDED_ID behave the same in both modes.
 
@@ -337,9 +337,15 @@ never read as a quantity. A first group of `0` never groups thousands, so
 `0,250` is 0.25 and not 250.
 
 The unit words are `x`, `×`, `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`,
-`Stück`, `Stueck`, `VE`, `Paar`, `Pack`, `kg`, `units` and `sets`. One list
+`Stück`, `Stueck`, `units` and `sets`. One list
 serves every quantity pattern, so a word that parses in a value also parses on a
-line of its own.
+line of its own. `VE`, `Paar`, `Pack` and `kg` are not in the list: none of them
+names a count of pieces, so a quantity they follow is not read at all.
+
+An item appended for an uncovered link states the unit the source names. A piece
+word, or no unit word, is `piece`; `set` and `sets` are `set`. Any other word is
+no unit this module can name, so that link gets no quantity: nothing is suggested
+and nothing is written.
 
 `VARIANT_SPLIT` asks whether the quantity field is empty, not whether the number
 parses. A field that holds `"2 St."` or `10**400` is a quantity the extractor
@@ -518,7 +524,8 @@ Rules:
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
   `description`. Its `input_index` is `None`. With the default `apply=False` it
   carries no `quantity` and no `unit`; with `apply=True` it carries both, and the
-  unit is `piece`.
+  unit is the one the source names: `piece` for a piece word or no unit word,
+  `set` for `set`/`sets`.
 - `field` is `None` when the finding is about no single item key.
 
 ## Trust boundary

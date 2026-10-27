@@ -185,9 +185,10 @@ finding with action `suggested` instead:
   own `suggested` finding on `quantity`, directly after the `added` finding.
 
 Pass `apply=True` and those three checks write, as `corrected`, `attached` and
-`added` with quantity and unit `piece`. A `reported` MISSING_GTIN finding is the
-same in both modes, because neither writes anything. `VARIANT_SPLIT`,
-`REDACTED_LINK` and `UNGROUNDED_ID` behave the same in both modes.
+`added` with the quantity and the unit the source names. A `reported`
+MISSING_GTIN finding is the same in both modes, because neither writes anything.
+`VARIANT_SPLIT`, `REDACTED_LINK` and `UNGROUNDED_ID` behave the same in both
+modes.
 
 `apply` is keyword-only and must be a bool. `apply="yes"` and `apply=1` raise
 `TypeError`: a flag that is not a bool is a caller bug, not a mode.
@@ -235,7 +236,7 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A tie or no match is reported with no item (`reported`, in both modes) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); the comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
-| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, quantity and unit `piece`); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
+| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, with the source's quantity and unit); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written |
 
@@ -389,15 +390,18 @@ name", not as a recall rate on real extractor output.
   claims the line below it, and only when it took no quantity from its own line
   or from the line above, so `"2 Stück\n<a>\n3 Stück\n<b>"` gives each link the
   number above itself. An address that is not a product link (a datasheet, an
-  order page) claims nothing. A blank line is layout, so
-  nothing beyond it is borrowed. A link alone on its line also reads the line
-  directly below, because a supplier writes the quantity under the position as
-  often as above it. A link with no quantity of its own gets none. The number
-  pattern starts on a left boundary, so `1.000.000 Stück` reads as 1000000 and
+  order page) claims nothing. A blank line is layout, so nothing beyond it is
+  borrowed. A link alone on its line also reads the line directly below, because
+  a supplier writes the quantity under the position as often as above it. A link
+  with no quantity of its own gets none. The unit an appended item states is the
+  source's own: a piece word, or no unit word, is `piece`, `set` and `sets` are
+  `set`, and any other word (`Paar`, `VE`, `Pack`, `kg`) is not a unit this
+  module can name, so that link gets no quantity. The number pattern starts on a
+  left boundary, so `1.000.000 Stück` reads as 1000000 and
   not as its last group `000`. `"2 pcs"` and `Decimal("2")` are quantities, so
   `VARIANT_SPLIT` keeps a line that carries one. The unit words are `x`, `×`,
-  `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `VE`,
-  `Paar`, `Pack`, `kg`, `units` and `sets`. A quantity field that is not empty
+  `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `units` and
+  `sets`. A quantity field that is not empty
   keeps its line even when the parser cannot read the number: a line that
   states `"2 St."` or `10**400` is a second position, never a variant. Parsing
   is capped: a number above `10**9` or a digit run longer than 12 is ignored, so

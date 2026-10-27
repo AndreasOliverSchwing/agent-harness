@@ -204,6 +204,16 @@ below is one card of that round.
   <b> / 3 Stück` is still 2 and 3. Both modes are tested. Documented in
   `SPEC-REFERENCE.md`, `README.md` and the `_claims_the_line_below()` and
   `_link_quantity()` docstrings.
+- **An uncovered link states the source's unit, not always "piece" (S6′).** An
+  appended item wrote `unit: "piece"` whatever the source said, and the quantity
+  patterns read `VE`, `Paar`, `Pack` and `kg` as piece words: `2 Paar <link>`,
+  `3 VE <link>`, `1,5 kg` above a link and `0,250 kg <link>` all became counts of
+  pieces. Only two units are known now. A piece word (`x`, `×`, `pc`, `pcs`,
+  `piece`, `pieces`, `Stück`, `Stueck`, `Stk.`, `St.`, `Stck.`, `unit`, `units`)
+  or no unit word gives `piece`; `set` and `sets` give `set`; any other word
+  gives no quantity, so nothing is suggested and nothing is written. `A` / `2
+  Sets` is quantity 2 with unit `set`. Both modes are tested. Documented in
+  `SPEC-REFERENCE.md`, `README.md` and the module docstring.
 
 ### Fixed in the second review round
 

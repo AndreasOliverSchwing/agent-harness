@@ -130,7 +130,10 @@ Codes and actions in this module:
                                  uncertain. field is "link", new_value the link.
                                  With apply=False the item carries no quantity
                                  and no unit; the quantity read for the link
-                                 follows as its own "suggested" finding.
+                                 follows as its own "suggested" finding. With
+                                 apply=True it carries the quantity and the
+                                 unit the source names: "piece" for a piece
+                                 word or no unit word, "set" for set/sets.
     UNCOVERED_LINK / "suggested" the quantity read for that link, with
                                  apply=False. field is "quantity", old_value
                                  None, new_value the quantity, item_index the
@@ -218,10 +221,17 @@ MIN_WORD_LEN = 4
 # over the shorter set so a long source line cannot drown a short description.
 MATCH_RATIO = 0.5
 
-# The unit word an item appended for an uncovered link carries. The source's own
-# unit word is not read yet, so every appended item states this one, and the
-# suggested quantity names it: the reader must know what apply=True writes.
+# The unit an item appended for an uncovered link states. Only two units are
+# known: a piece word, or no unit word at all, is a count of pieces; "set" and
+# "sets" are a count of sets. Any other word ("Paar", "VE", "Pack", "kg") is not
+# a unit this module can name, so the link gets no quantity: a pair is not a
+# piece, and a kilogram is not a count of pieces at all.
 APPENDED_UNIT = "piece"
+SET_UNIT = "set"
+PIECE_UNIT_WORDS = frozenset((
+    "x", "\u00d7", "pc", "pcs", "piece", "pieces", "st\u00fcck", "stueck",
+    "stk", "st", "stck", "unit", "units"))
+SET_UNIT_WORDS = frozenset(("set", "sets"))
 
 # Longest quote a finding's evidence carries. A finding's evidence is one short
 # quotable sentence (SPEC-REFERENCE.md), and a hostile mail can put 100 KB on one
@@ -386,9 +396,11 @@ MAX_QUANTITY_DIGITS = 12
 # One list serves every quantity pattern, so a word that parses in a value also
 # parses on a line of its own. The longer spellings come first: an alternative
 # that matched "st" inside "stck" would leave "ck" behind and lose the number.
+# Only the words that name a unit this module knows are here (see
+# PIECE_UNIT_WORDS and SET_UNIT_WORDS). "Paar", "VE", "Pack" and "kg" are not
+# units of a count of pieces, so a quantity they follow is not read at all.
 _QUANTITY_UNIT_WORDS = (
-    r"x|×|pcs?\.?|pieces?|stck\.?|stueck|stück|stk\.?|st\.?|units?|sets?"
-    r"|ve\.?|paar|pack|kg")
+    r"x|×|pcs?\.?|pieces?|stck\.?|stueck|stück|stk\.?|st\.?|units?|sets?")
 _QUANTITY_UNIT = re.compile(
     r"\s*(?:%s)\s*$" % _QUANTITY_UNIT_WORDS, re.IGNORECASE)
 
@@ -405,10 +417,11 @@ _QUANTITY_NUMBER = (r"(?<![\d.,])\d{1,%d}(?:[.,]\d{1,%d})*"
                     % (MAX_QUANTITY_DIGITS, MAX_QUANTITY_DIGITS))
 
 # A quantity that stands in front of a link on the same line: "4x <link>",
-# "1.000 St\u00fcck <link>".
+# "1.000 St\u00fcck <link>". Group 2 is the unit word, so the appended item can state
+# the source's own unit instead of a fixed one.
 _QTY_BEFORE = re.compile(
     r"(%s)\s*"
-    r"(?:%s)\s*$"
+    r"(%s)\s*$"
     % (_QUANTITY_NUMBER, _QUANTITY_UNIT_WORDS),
     re.IGNORECASE)
 
@@ -1065,8 +1078,9 @@ def _check_uncovered_links(items, origins, source_text, apply):
             continue
         if link["line_index"] not in quotes:
             quotes[link["line_index"]] = _quote(link["line"])
-        quantity = _link_quantity(lines, link["line_index"], link["segment"],
-                                  link["first_on_line"], link["only_on_line"])
+        found = _link_quantity(lines, link["line_index"], link["segment"],
+                               link["first_on_line"], link["only_on_line"])
+        quantity, unit = found if found is not None else (None, APPENDED_UNIT)
         appended = {
             "other_ids": [link["link_id"]],
             "link": url,
@@ -1074,7 +1088,7 @@ def _check_uncovered_links(items, origins, source_text, apply):
         }
         if apply:
             appended["quantity"] = quantity
-            appended["unit"] = APPENDED_UNIT
+            appended["unit"] = unit
         items.append(appended)
         origins.append(None)
         covered_urls.add(url.lower())
@@ -1091,7 +1105,7 @@ def _check_uncovered_links(items, origins, source_text, apply):
         findings.append(_finding(
             "UNCOVERED_LINK", "suggested",
             evidence="the source reads a quantity of %s for this link, with "
-                     "the unit word \"%s\"" % (quantity, APPENDED_UNIT),
+                     "the unit word \"%s\"" % (quantity, unit),
             field="quantity",
             old_value=None,
             new_value=quantity,
@@ -1989,8 +2003,26 @@ def _claims_the_line_below(lines, line_index):
     return True
 
 
+def _unit_of_word(word):
+    """Return the unit a quantity word names, or None.
+
+    word is the word a quantity pattern matched, so it may carry a full stop
+    ("Stk.") and any case ("ST\u00dcCK"). No unit word at all is a count of pieces,
+    and so is a piece word. "set" and "sets" are a count of sets. Any other word
+    is not a unit this module can name, so the caller reads no quantity.
+    """
+    if word is None:
+        return APPENDED_UNIT
+    normal = word.strip().rstrip(".").lower()
+    if normal in SET_UNIT_WORDS:
+        return SET_UNIT
+    if normal in PIECE_UNIT_WORDS:
+        return APPENDED_UNIT
+    return None
+
+
 def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
-    """Return the quantity that belongs to one link, or None.
+    """Return (quantity, unit) that belongs to one link, or None.
 
     segment is the text on the link's own line between the previous link and
     this one, so two links on one line cannot share a quantity. A quantity
@@ -2008,16 +2040,23 @@ def _link_quantity(lines, line_index, segment, first_on_line, only_on_line):
     the line below belongs to the line, not to one of two links. The link above
     must not claim that line either: it claims it only when it has no quantity
     of its own and no quantity above itself (_claims_the_line_below).
+
+    The unit is the source's own: a piece word or no unit word is "piece", and
+    "set" or "sets" is "set". A quantity word that names no such unit ("Paar",
+    "VE", "Pack", "kg") gives None: this module cannot say what it counts.
     """
     match = _QTY_BEFORE.search(_without_markdown_text(segment))
     if match:
-        return _to_number(match.group(1))
+        quantity = _to_number(match.group(1))
+        if quantity is None:
+            return None
+        return quantity, _unit_of_word(match.group(2))
     if first_on_line and line_index > 0:
-        quantity = _previous_line_quantity(lines[line_index - 1].strip())
-        if quantity is not None:
+        found = _previous_line_quantity(lines[line_index - 1].strip())
+        if found is not None:
             above = line_index - 2
             if not (above >= 0 and _claims_the_line_below(lines, above)):
-                return quantity
+                return found
     if only_on_line and line_index + 1 < len(lines):
         return _previous_line_quantity(lines[line_index + 1].strip())
     return None
@@ -2036,12 +2075,13 @@ def _without_markdown_text(segment):
 
 
 def _previous_line_quantity(previous):
-    """Return the quantity a line above a link holds, or None.
+    """Return (quantity, unit) a line above a link holds, or None.
 
     The line must hold nothing but a quantity: a whole number ("2"), or a
     number with a quantity word ("4 x", "2 pcs", "1.000 Stück"). A line that
     carries money is never a quantity, and neither is a bare fraction: "12,50"
-    on its own line above a link is a price, not a count of 12.5 pieces.
+    on its own line above a link is a price, not a count of 12.5 pieces. A
+    quantity word that names no unit this module knows ("1,5 kg") gives None.
     """
     if _CURRENCY.search(previous):
         return None
@@ -2053,7 +2093,10 @@ def _previous_line_quantity(previous):
         return None
     if match.group(2) is None and isinstance(number, float):
         return None
-    return number
+    unit = _unit_of_word(match.group(2))
+    if unit is None:
+        return None
+    return number, unit
 
 
 def _marked_pack_sizes(text):
