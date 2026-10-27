@@ -102,20 +102,47 @@ from which source line. Keep the call in the producer, where both are in hand.
 
 ```python
 import harness_grounding as g
-checked, findings = g.ground(extraction, source_text)
+checked, findings = g.ground(extraction, source_text)            # suggest only
+checked, findings = g.ground(extraction, source_text, apply=True)  # write
 ```
 
-The two arguments are checked, not guessed. `ground()` raises `TypeError` when
+The arguments are checked, not guessed. `ground()` raises `TypeError` when
 `extraction` is not a dict, when `extraction["items"]` is present but not a list,
-or when `source_text` is not a str. The message names the argument and the type
-it received. Coercing a wrong type would be worse than the error: a bare list or
-a tuple of items came back as `{"items": []}` with no finding, and bytes as a
-source flagged every id. A missing `items` key stays allowed and returns an empty
-list, because the data model tolerates missing keys.
+when `source_text` is not a str, or when `apply` is not a bool. The message names
+the argument and the type it received. Coercing a wrong type would be worse than
+the error: a bare list or a tuple of items came back as `{"items": []}` with no
+finding, and bytes as a source flagged every id. A missing `items` key stays
+allowed and returns an empty list, because the data model tolerates missing keys.
+`apply` is keyword-only, so a third positional argument cannot be read as a flag
+by accident.
+
+### Suggest by default
+
+`apply=False` is the default. Three checks would write an extraction value —
+SET_MULTIPLIED, MISSING_GTIN, and the quantity of the item appended for an
+UNCOVERED_LINK — and each writes it only with `apply=True`. With the default
+each records a finding with action `suggested`:
+
+- `new_value` is the value `apply=True` would write;
+- the item keeps the value the caller passed in, and is marked `uncertain: true`
+  because the source does not support that value;
+- the item appended for an uncovered link is still appended, with `link`,
+  `other_ids` and `uncertain`, and without a quantity and without a unit. When a
+  quantity was read for the link, a second finding follows its `added` finding
+  directly: code `UNCOVERED_LINK`, action `suggested`, field `quantity`,
+  `old_value` `None`, `new_value` the quantity, `item_index` the appended item,
+  `input_index` `None`. Its evidence names the unit word `apply=True` writes.
+
+`apply=True` restores the writing behaviour: `corrected`, `attached`, and `added`
+with a quantity and unit `piece`. A `reported` MISSING_GTIN finding is the same in
+both modes, because neither writes anything. VARIANT_SPLIT, REDACTED_LINK and
+UNGROUNDED_ID behave the same in both modes.
 
 A producer that wants to gate its own output blocks on an item with `uncertain: true`,
-or on a finding with action `flagged` or `reported`. Those two are the ones the module
-cannot resolve on its own. The gating policy belongs to the producer, not to the spec.
+on a finding with action `flagged` or `reported`, or on a `suggested` finding it
+has not yet decided about. `flagged` and `reported` are the ones the module
+cannot resolve on its own; `suggested` is the one the module will not resolve
+without permission. The gating policy belongs to the producer, not to the spec.
 
 ### REDACTED_LINK restores only a unique match
 
@@ -426,10 +453,10 @@ Every finding from every check has exactly eight keys:
 | Key | Meaning |
 |---|---|
 | `code` | stable machine code: `UNGROUNDED_ID`, `MISSING_GTIN`, `REDACTED_LINK`, `UNCOVERED_LINK`, `SET_MULTIPLIED`, `VARIANT_SPLIT` |
-| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged` |
+| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged`, `suggested` |
 | `field` | item key the finding concerns, or `None` when no single key is concerned |
 | `old_value` | what that key held before this module touched it, or `None` |
-| `new_value` | what this module wrote into that key, or `None` when it wrote nothing |
+| `new_value` | what this module wrote into that key, or, for a `suggested` finding, the value `apply=True` would write; `None` when it wrote nothing and suggests nothing |
 | `item_index` | index in the returned items list, or `None` |
 | `input_index` | index in the caller's items list, or `None` for an appended item |
 | `evidence` | one short quotable sentence |
@@ -440,6 +467,9 @@ Rules:
   for others. Read `old_value` and `new_value`.
 - `new_value` is `None` for `flagged` and `reported`: neither writes anything. A
   `reported` finding names the value it is about in `evidence`.
+- `new_value` is NOT `None` for a `suggested` finding, although it writes nothing:
+  it names the value `apply=True` would write. That is the whole point of the
+  action — a caller can read the value, show it, and decide.
 - `new_value` is also `None` for a `VARIANT_SPLIT` conflict. The survivor keeps
   its own value, so nothing is written; `old_value` is the merged line's value
   and `evidence` names the value the survivor kept.
@@ -457,7 +487,9 @@ Rules:
   length of that line.
 - An appended item carries the marketplace id in `other_ids`
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
-  `description`. Its `input_index` is `None`.
+  `description`. Its `input_index` is `None`. With the default `apply=False` it
+  carries no `quantity` and no `unit`; with `apply=True` it carries both, and the
+  unit is `piece`.
 - `field` is `None` when the finding is about no single item key.
 
 ## Trust boundary

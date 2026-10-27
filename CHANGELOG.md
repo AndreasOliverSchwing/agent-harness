@@ -149,6 +149,24 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   in Python 3.11+) give no quantity instead of an exception. Documented in
   `SPEC-REFERENCE.md`, "How a quantity is read".
 
+### Fix round 3
+
+The third review round of 2026-10-27 (branch `feat/grounding-checks`) is
+flag-first: each item narrows a rule so that it writes or claims less. Each entry
+below is one card of that round.
+
+- **`ground()` only suggests by default (3.1).** The three checks that would write
+  an extraction value — `SET_MULTIPLIED`, `MISSING_GTIN` and the quantity of an
+  item appended for an `UNCOVERED_LINK` — now write it only with
+  `ground(..., apply=True)`. The default `apply=False` records a finding with the
+  new action `suggested`: its `new_value` is the value `apply=True` would write,
+  and every item keeps the value the caller passed in. The item is still marked
+  `uncertain: true`, the placeholder item for an uncovered link is still appended
+  (without quantity and unit), and a `MISSING_GTIN` no item can take is still
+  `reported`, in both modes. A non-bool `apply` raises `TypeError`; the flag is
+  keyword-only. Documented in `README.md`, `SPEC-REFERENCE.md` and the module
+  docstring.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on

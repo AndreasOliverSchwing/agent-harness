@@ -145,23 +145,52 @@ checked, findings = g.ground(extraction, source)
 for finding in findings:
     print(finding["code"], finding["action"], finding["field"],
           finding["old_value"], "->", finding["new_value"])
+
+# The same run, with the values written instead of suggested.
+written, findings = g.ground(extraction, source, apply=True)
 ```
 
-That extraction is well-formed and wrong in three ways. It prints
-`UNGROUNDED_ID flagged part_number AC-9999 -> None`,
-`SET_MULTIPLIED corrected quantity 12 -> 3` and
-`MISSING_GTIN attached gtin None -> 2000000000008`. The full runnable version is
+That extraction is well-formed and wrong in three ways. The default run writes
+nothing and prints `UNGROUNDED_ID flagged part_number AC-9999 -> None`,
+`SET_MULTIPLIED suggested quantity 12 -> 3` and
+`MISSING_GTIN suggested gtin None -> 2000000000008`; the item keeps quantity 12,
+unit `piece` and no GTIN. Add `apply=True` and the same three findings read
+`corrected` and `attached`, and the checked item holds quantity 3, unit `set` and
+the GTIN. The full runnable version, which prints both runs, is
 `python3 examples/grounding_example.py`.
 
 `ground()` raises `TypeError` when `extraction` is not a dict, when
-`extraction["items"]` is present but not a list, or when `source_text` is not a
-str. It does not coerce a wrong type: a silent `{"items": []}` would report a
-clean result for a caller bug. A missing `items` key is allowed and returns an
-empty list.
+`extraction["items"]` is present but not a list, when `source_text` is not a
+str, or when `apply` is not a bool. It does not coerce a wrong type: a silent
+`{"items": []}` would report a clean result for a caller bug. A missing `items`
+key is allowed and returns an empty list.
 
 Inside an item, a wrong type never raises. An `other_ids` entry that is not a
 string (a dict, a list, `None`) and a blank entry are skipped by every check that
 reads `other_ids`. The entry stays in the item.
+
+### Suggest by default
+
+`ground()` writes nothing for three checks unless the caller asks. SET_MULTIPLIED,
+MISSING_GTIN and the quantity of an item appended for an UNCOVERED_LINK would
+write an extraction value, so with the default `apply=False` each records a
+finding with action `suggested` instead:
+
+- `new_value` is the value `apply=True` would write;
+- every item keeps the value you passed in;
+- the item is still marked `uncertain: true`, because the source does not support
+  the value it holds;
+- the placeholder item for an uncovered link is still appended, without a
+  quantity and without a unit, and the quantity read for that link follows as its
+  own `suggested` finding on `quantity`, directly after the `added` finding.
+
+Pass `apply=True` and those three checks write, as `corrected`, `attached` and
+`added` with quantity and unit `piece`. A `reported` MISSING_GTIN finding is the
+same in both modes, because neither writes anything. `VARIANT_SPLIT`,
+`REDACTED_LINK` and `UNGROUNDED_ID` behave the same in both modes.
+
+`apply` is keyword-only and must be a bool. `apply="yes"` and `apply=1` raise
+`TypeError`: a flag that is not a bool is a caller bug, not a mode.
 
 ### The finding contract
 
@@ -170,10 +199,10 @@ Every finding, from every check, has exactly these eight keys:
 | Key | Meaning |
 |---|---|
 | `code` | stable machine code, one of the six below |
-| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged` |
+| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged`, `suggested` |
 | `field` | the item key the finding concerns (`part_number`, `gtin`, `link`, `quantity`, `note`, `other_ids`), or `None` when no single key is concerned |
 | `old_value` | what that key held before this module touched it; `None` when the key was absent or empty |
-| `new_value` | what this module wrote into that key; `None` when it wrote nothing |
+| `new_value` | what this module wrote into that key, or, for a `suggested` finding, the value `apply=True` would write; `None` when it wrote nothing and suggests nothing |
 | `item_index` | index of the item in the **returned** items list, or `None` |
 | `input_index` | index of that item in the list **you passed in**, or `None` for an item this module appended |
 | `evidence` | one short quotable sentence, safe to show a human |
@@ -186,6 +215,8 @@ writes anything. A `reported` finding names the value it is about in `evidence`.
 A `VARIANT_SPLIT` conflict is the same: the survivor keeps its own value, so
 nothing is written and `new_value` is `None`. The variant's value is in
 `old_value` and the survivor's value is named in `evidence`.
+A `suggested` finding is the other way round: it writes nothing and still names
+its `new_value`, because that is the value the caller can choose to write.
 For the list key `other_ids`, `new_value` is the entry that was added.
 
 `item_index` and `input_index` are the same number until an item is merged
@@ -202,10 +233,10 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | Code | What it catches | What it does |
 |---|---|---|
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
-| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, else one description match. A tie or no match is reported with no item (`reported`) |
+| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A tie or no match is reported with no item (`reported`, in both modes) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); the comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
-| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
-| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item; the evidence names the unit change |
+| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, quantity and unit `piece`); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line, on the line directly above it, or (when neither of those grounds an item) on the line directly below it, and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
