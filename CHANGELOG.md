@@ -149,6 +149,85 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   in Python 3.11+) give no quantity instead of an exception. Documented in
   `SPEC-REFERENCE.md`, "How a quantity is read".
 
+### Fixed in the second review round
+
+The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
+ordinary German supplier mail. Each entry below is one item of that recheck.
+
+- `MISSING_GTIN` takes only the run that follows the keyword. The keyword was
+  checked per line, so another number on that line became the GTIN:
+  `Bestellung 20261023, Sechskantschraube M8 AC-44170, EAN 2000000000015`
+  attached `20261023`, and `EAN auf Anfrage unter Tel. 089 12345670` attached
+  `12345670`. The value pattern now needs the digit run directly after the
+  keyword, with an optional `-8`/`-12`/`-13`/`-14` suffix or a `Nr.`/`No.`
+  label in between.
+- `MISSING_GTIN` writes a GTIN only to the item its line names. Two siblings
+  that shared every description word both took the first GTIN, a tie went to
+  the first item, and an item this module appended from a bare link received
+  one. The part number on the GTIN's line now decides, a bare GTIN line is read
+  with the line above it, the description counts only when exactly one item
+  matches, and a tie, no match or an appended item is reported with
+  `item_index` `None`.
+- `MISSING_GTIN` reads the keyword spellings real mail writes: `EAN13`,
+  `GTIN13`, `EAN-13`, `GTIN-13`, `EANs`, `Barcodes`, `Bar-Code` and
+  `Strichcodenummer` all name the run that follows. The length suffix may end
+  with a hyphen, a space or no separator. The separator after the keyword is
+  `\s*(?::\s*)?` instead of `\s*:?\s*`: the old form split a run of spaces
+  between two quantifiers, so 20,000 spaces after `EAN` took 2.8 s and now
+  takes 5 ms.
+- An item takes at most one attached GTIN. Every other number the source names
+  is reported with `item_index` `None`, because an item that collects every
+  number on a hostile line is not a GTIN. A finding's evidence quote stops at
+  200 characters, as the finding contract says.
+- `UNCOVERED_LINK` gives an appended item only its own quantity line. The
+  second link of `A` / `2 Stück` / `B` / `3 Stück` took the first link's
+  quantity and gave `[None, 2]`. The number pattern also starts on a left
+  boundary now, so `1.000.000 Stück` no longer reads as 0.
+- `SET_MULTIPLIED` reads the labels real mail writes: `Bestellmenge`,
+  `Liefermenge`, `Anzahl`, `Qty.` and `Menge (VE)` count beside `Menge` and
+  `Qty`. Before, each of those lines read as a plain quantity, so 140 pieces
+  stayed 140 pieces instead of 28 sets of 5.
+- `UNGROUNDED_ID` grounds an id only across the documented joiners. Punctuation
+  that is not a joiner (comma, pipe, bracket, semicolon, colon) ends a token,
+  so `Pos. 3: AC-4417, 8 Stück` no longer grounds `AC-44178`, and a joiner
+  between two digits ties them into one number, so the date `2026-10-26` no
+  longer grounds `1026`.
+- `VARIANT_SPLIT` reports one finding per field it writes. A merge that moved
+  the link, `gtin` or `other_ids` onto the survivor wrote them with no finding,
+  and dropped the merged line's own note, unit and price. Each written field
+  now has a finding with the `input_index` of the merged line, the merged
+  note is appended, and a unit or price that differs is reported.
+- A `VARIANT_SPLIT` conflict writes nothing, so `new_value` is `None`.
+  `old_value` names the merged line's value and the evidence names the value
+  the survivor kept.
+- `item_index` and `input_index` can differ after any merge, not only for
+  `VARIANT_SPLIT`. A merge removes an item, so every finding recorded after it
+  can carry two different numbers, whatever its code. `README.md` and
+  `SPEC-REFERENCE.md` said otherwise and now say this.
+- The link check and the GTIN check index their work once per mail. The link
+  check rescanned every item, including the items it had just appended: 100 KB
+  with one eBay link per line took 11.98 s and now takes 0.10 s. The GTIN check
+  re-tokenised the line for every number on it: 100 KB of GTINs on one line
+  took 185.78 s and now takes 0.30 s.
+- The set check ignores an id longer than 64 characters when it matches a
+  line. One 1,000-character part number beside a line of 3,300 tokens built a
+  1,000-character form for every token: 352 MB and 1.33 s. The same input now
+  takes 0.011 s and 14 MB. `UNGROUNDED_ID` still reads an id of any length,
+  because that check builds no forms.
+- `REDACTED_LINK` compares a cut link without its query string. The source
+  link is stored cleaned, so it holds no `?spm=…`; an extractor keeps it, so a
+  cut AliExpress link never matched, was flagged, and `UNCOVERED_LINK` then
+  appended the same product a second time. The cut is now looked for in the
+  link without its query string and fragment, and one match restores it. Two
+  matches still stay flagged.
+- Three timing tests could not fail, because their sources never reached the
+  code they claimed to guard. The pack-marker test now holds a set line beside
+  the 20,000-digit run (a bare `(\d+)` takes it from 0.010 s to 11.53 s), the
+  set-line test uses 1,000 blocks on 1,000 lines (rebuilding the per-line facts
+  takes it from 0.053 s to 30.10 s), and the digit-run test guards the
+  de-duplication of 40,000 distinct numbers (a list scan took 6.36 s; a set
+  takes 0.050 s).
+
 ## 0.3.0 — 2026-10-25
 
 **A well-formed artifact can still hold data the source never said.** The linter

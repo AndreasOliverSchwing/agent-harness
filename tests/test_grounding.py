@@ -2339,6 +2339,44 @@ class GroundInputTypeTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
+class ChangelogFixRoundTwoTest(unittest.TestCase):
+    """The changelog names every behaviour that fix round 2 changed.
+
+    Fix round 2 (the cards of 2026-10-27) changed six checks. A user who reads
+    only the changelog must find each change, so every item of the recheck
+    carries one sentence with a phrase this test pins.
+    """
+
+    # (item code from the 2026-10-27 recheck, a phrase its entry must hold)
+    ITEMS = (
+        ("B1", "no longer shifts the id index"),
+        ("B2", "no longer deletes an order line it cannot read"),
+        ("S1", "corrects only the item the set line belongs to"),
+        ("S2", "index their work once"),
+        ("S3", "64 characters"),
+        ("S4", "non-string `other_ids` entry"),
+        ("S5", "only the run that follows the keyword"),
+        ("S6", "the item its line names"),
+        ("S7", "documented joiners"),
+        ("S8", "one finding per field"),
+        ("S9", "`item_index` and `input_index` can differ"),
+        ("S10", "Bestellmenge"),
+        ("S11", "its own quantity line"),
+        ("S12", "Strichcodenummer"),
+        ("S13", "without its query string"),
+        ("S14", "could not fail"),
+        ("N4", "writes nothing"),
+    )
+
+    def test_every_item_of_fix_round_two_has_an_entry(self):
+        with open(os.path.join(REPO, "CHANGELOG.md"), encoding="utf-8") as handle:
+            changelog = re.sub(r"\s+", " ", handle.read())
+        missing = [code for code, phrase in self.ITEMS
+                   if phrase not in changelog]
+        self.assertEqual(missing, [], "no changelog entry for: %s"
+                         % ", ".join(missing))
+
+
 class PublicGtinTest(unittest.TestCase):
     """Every GTIN a published file shows is an invented prefix-2 number.
 
