@@ -1348,6 +1348,41 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["quantity"], 3)
         self.assertEqual(checked["items"][1]["quantity"], 6)
 
+    def test_a_description_word_does_not_own_an_item_whose_part_number_is_elsewhere(self):
+        # S1 follow-up: the reviewer's input (a) WITH descriptions. The word
+        # "Pack" in "Kabelbinder 2er-Pack" reached MATCH_RATIO for the screws,
+        # so another product's line owned AC-44170 and its correct 6 became 3.
+        extraction = {"items": [
+            {"part_number": "NW-22010", "description": "Kabelbinder 2er-Pack",
+             "quantity": 3, "unit": "set"},
+            {"part_number": "AC-44170", "description": "Schraube M8 2er-Pack",
+             "quantity": 6, "unit": "pack"},
+        ]}
+        source = ("NW-22010 Kabelbinder 2er-Pack\n"
+                  "Menge: 3 x 2\n"
+                  "AC-44170 Schraube M8, 6 Packungen \u00e0 2er-Pack\n")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 3)
+        self.assertEqual(checked["items"][1]["quantity"], 6)
+        self.assertEqual(checked["items"][1]["unit"], "pack")
+
+    def test_a_description_still_carries_an_item_with_no_id_in_the_source(self):
+        # S1 follow-up: the description fallback is for the item whose part
+        # number the extractor did not read. It must keep working.
+        extraction = {"items": [
+            {"part_number": "NW-22010", "quantity": 8},
+            {"description": "Kabelbinder 2er-Pack", "quantity": 8},
+        ]}
+        source = ("NW-22010 Schraube M8, 8 St\u00fcck\n"
+                  "Kabelbinder 2er-Pack\n"
+                  "Menge: 4 x 2\n")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["item_index"], 1)
+        self.assertEqual(checked["items"][1]["quantity"], 4)
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+
     def test_a_block_of_set_lines_corrects_only_its_own_item(self):
         # S1 (c): two set lines in one block, one product above and one below.
         # Each set line belongs to the product next to it, so the Kabelbinder's

@@ -162,12 +162,17 @@ MATCH_RATIO = 0.5
 # Words that name no product. A GTIN line carries them ("GTIN ...", "part ...")
 # and a description may carry them too, so an overlap on one of them alone
 # proves nothing and must not move a GTIN to another product.
+#
+# The pack words are here for the same reason on a set line: "2er-Pack" names a
+# packaging size, not a product, so "Pack" alone must not let one product's line
+# own another product's item.
 GENERIC_WORDS = frozenset((
     "part", "parts", "item", "items", "number", "nummer", "artikel",
     "gtin", "ean", "upc", "barcode", "strichcode",
     "quantity", "menge", "qty", "piece", "pieces", "stueck", "stück",
     "order", "bestellung", "supply", "confirmation", "total", "price",
     "preis", "product", "produkt", "please", "siehe",
+    "pack", "packs", "packung", "packungen", "set", "sets", "satz",
 ))
 
 # A placeholder earlier than this is not a redacted product path. Every product
@@ -1744,8 +1749,14 @@ def _grounded_by_line(items, facts):
     A line grounds an item when it holds the item's part number or GTIN on a
     token boundary, when it holds the item's link (or a link with the item's
     marketplace id), or when it shares MATCH_RATIO of the item's description
-    words. The description rule is what carries an item whose part number the
-    extractor did not read.
+    words.
+
+    The description rule is only a fallback, and it is what carries an item
+    whose part number the extractor did not read. When the item's own id DOES
+    occur in the source, only a line that carries that id grounds it: a shared
+    description word must never hand a product's line to a different product.
+    One word of "Kabelbinder 2er-Pack" reaching MATCH_RATIO for "Schraube M8
+    2er-Pack" was enough to rewrite the screws' quantity.
 
     The lookup is inverted on purpose. A supplier line names one product, so a
     line grounds a few items at most, while a mail holds many. The set check
@@ -1788,7 +1799,10 @@ def _grounded_by_line(items, facts):
         for word in item_words[index]:
             bucket.setdefault(word, set()).add(index)
     max_length = max([len(form) for form in ids] or [0])
-    grounded = []
+    # Ids first, over the whole source: an item whose id occurs anywhere is
+    # grounded by ids only.
+    id_found = []
+    id_grounded = set()
     for fact in facts:
         found = set()
         for form in _line_id_forms(fact, max_length):
@@ -1800,11 +1814,20 @@ def _grounded_by_line(items, facts):
             link_id = product_link_id(url)
             if link_id is not None:
                 found.update(links.get(("id", link_id), ()))
+        id_found.append(found)
+        id_grounded.update(found)
+    grounded = []
+    for fact, found in zip(facts, id_found):
+        found = set(found)
         line_words = fact["words"]
         for word in line_words:
-            found.update(words_any.get(word, ()))
+            for index in words_any.get(word, ()):
+                if index not in id_grounded:
+                    found.add(index)
         for word in line_words:
             for index in words_check.get(word, ()):
+                if index in id_grounded:
+                    continue
                 if _overlap(item_words[index], line_words) >= MATCH_RATIO:
                     found.add(index)
         grounded.append(sorted(found))

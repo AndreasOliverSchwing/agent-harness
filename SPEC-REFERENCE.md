@@ -303,6 +303,12 @@ Two conditions must hold, and both must hold on one line:
    A line grounds an item when the part number occurs on it on a token
    boundary, when its GTIN is on it, when the item's link is on it, or when it
    shares at least `MATCH_RATIO` of the item's description words.
+   The description rule is a fallback only. When the item's own id occurs
+   anywhere in the source, only a line that carries that id grounds it. So
+   `"NW-22010 Kabelbinder 2er-Pack"` never grounds `AC-44170 Schraube M8
+   2er-Pack` through the shared word "Pack". The pack words (`pack`, `packs`,
+   `packung`, `packungen`, `set`, `sets`, `satz`) are generic and never count
+   as a description match.
 2. **A pack marker that names the same pack size sits on the set line or on the
    owner line.** The marker must sit on one of those two lines, not anywhere in
    the mail.

@@ -323,6 +323,11 @@ name", not as a recall rate on real extractor output.
   item on its own line, else the one on the line directly above, else the one on
   the line directly below. A set line whose item sits further away corrects
   nothing. A pack word only in the extractor's description is never enough.
+  A line grounds an item by its part number, GTIN or link, or by the item's
+  description words. The description is a fallback only: when the item's part
+  number occurs anywhere in the source, only a line that carries that id
+  grounds it. The pack words (`pack`, `packs`, `packung`, `packungen`, `set`,
+  `sets`, `satz`) are generic and never count as a description match.
 - The checks are mechanical pattern matches. They are deterministic on purpose: a
   grounding check that needs a model fails exactly when the extraction is least
   trustworthy.
