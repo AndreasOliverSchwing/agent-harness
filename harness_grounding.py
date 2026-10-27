@@ -171,6 +171,11 @@ MIN_WORD_LEN = 4
 # over the shorter set so a long source line cannot drown a short description.
 MATCH_RATIO = 0.5
 
+# Longest quote a finding's evidence carries. A finding's evidence is one short
+# quotable sentence (SPEC-REFERENCE.md), and a hostile mail can put 100 KB on one
+# line: the cost of a finding may not grow with the length of that line.
+QUOTE_LIMIT = 200
+
 # Words that name no product. A GTIN line carries them ("GTIN ...", "part ...")
 # and a description may carry them too, so an overlap on one of them alone
 # proves nothing and must not move a GTIN to another product.
@@ -889,6 +894,19 @@ def _match_count_note(count):
             "so the product is ambiguous" % count)
 
 
+def _quote(text, limit=QUOTE_LIMIT):
+    """Return a short quote of text for a finding's evidence.
+
+    SPEC-REFERENCE.md says a finding's evidence is one short quotable sentence.
+    A hostile mail can put 100 KB on a single line, so the quote is cut: the
+    cost of a finding may not grow with the length of the line it quotes.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit - 1].rstrip() + "\u2026"
+
+
 def _check_uncovered_links(items, origins, source_text):
     """UNCOVERED_LINK: add an item for a product link that no item covers.
 
@@ -902,14 +920,68 @@ def _check_uncovered_links(items, origins, source_text):
     link with no quantity of its own gets none: a single "4x" in front of two
     links belongs to the first one only. The marketplace id goes into
     other_ids: it is not a part number and not a description.
+
+    The links the items already cover are indexed once, in a set of id forms and
+    a set of cleaned urls. Asking "does some item cover this link?" is then a
+    lookup instead of a scan of every item, and an item this check appended
+    extends the index. A mail with one uncovered link per line therefore stays
+    linear: the quadratic version rescanned every appended item for every link,
+    which took 12 s on 100 KB of lines.
     """
     findings = []
     lines = source_text.splitlines()
+    links = _source_links(lines)
+    if not links:
+        return findings
+    form_lengths = set()
+    for link in links:
+        form_lengths.update(len(form) for form in _link_id_forms(link["link_id"]))
+    covered_urls, covered_forms = _link_coverage(items, form_lengths)
+    quotes = {}
+    for link in links:
+        url = link["url"]
+        forms = _link_id_forms(link["link_id"])
+        if url.lower() in covered_urls:
+            continue
+        if any(form in covered_forms for form in forms):
+            continue
+        if link["line_index"] not in quotes:
+            quotes[link["line_index"]] = _quote(link["line"])
+        items.append({
+            "other_ids": [link["link_id"]],
+            "link": url,
+            "quantity": _link_quantity(lines, link["line_index"],
+                                       link["segment"],
+                                       link["first_on_line"],
+                                       link["only_on_line"]),
+            "unit": "piece",
+            "uncertain": True,
+        })
+        origins.append(None)
+        covered_urls.add(url.lower())
+        _add_flat_forms(covered_forms, link["link_id"], form_lengths)
+        findings.append(_finding(
+            "UNCOVERED_LINK", "added",
+            evidence=quotes[link["line_index"]] or url,
+            field="link",
+            new_value=url,
+            item_index=len(items) - 1,
+            input_index=None))
+    return findings
+
+
+def _source_links(lines):
+    """Return the product links of the source, one per url, in source order.
+
+    Each entry holds the line index, the text between the previous link on that
+    line and this one, whether this is the first link on its line, whether it is
+    the only one, the cleaned url and the marketplace id. The scan is one pass
+    over the lines, so the caller can build an index from the result before it
+    decides anything.
+    """
+    found = []
     seen = set()
     for line_index, line in enumerate(lines):
-        # The text between the previous link on this line and this one. The
-        # quantity of a link is written in that segment, never in another
-        # link's segment.
         previous_end = 0
         for match in _URL.finditer(line):
             segment = line[previous_end:match.start()]
@@ -919,29 +991,55 @@ def _check_uncovered_links(items, origins, source_text):
             url = _clean_link(match.group(0))
             if not url or url in seen:
                 continue
-            seen.add(url)
             link_id = product_link_id(url)
             if link_id is None:
                 continue
-            if any(_covers_link(item, url, link_id) for item in items):
-                continue
-            items.append({
-                "other_ids": [link_id],
-                "link": url,
-                "quantity": _link_quantity(lines, line_index, segment,
-                                           first_on_line, only_on_line),
-                "unit": "piece",
-                "uncertain": True,
+            seen.add(url)
+            found.append({
+                "line_index": line_index,
+                "line": line,
+                "segment": segment,
+                "first_on_line": first_on_line,
+                "only_on_line": only_on_line,
+                "url": url,
+                "link_id": link_id,
             })
-            origins.append(None)
-            findings.append(_finding(
-                "UNCOVERED_LINK", "added",
-                evidence=line.strip() or url,
-                field="link",
-                new_value=url,
-                item_index=len(items) - 1,
-                input_index=None))
-    return findings
+    return found
+
+
+def _link_coverage(items, form_lengths):
+    """Return (urls, forms): the links the extractor's own items stand for.
+
+    urls holds the cleaned link of every item. forms holds every substring of an
+    item's id values that is as long as a link id in the source, so "does this
+    item hold that id?" is a set lookup. The index is built once per call, which
+    is what keeps a mail with one link per line linear.
+    """
+    urls = set()
+    forms = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        link = item.get("link")
+        if isinstance(link, str):
+            cleaned = _clean_link(link)
+            if cleaned:
+                urls.add(cleaned.lower())
+        values = [item.get("part_number"), link]
+        values.extend(_as_list(item.get("other_ids")))
+        for value in values:
+            _add_flat_forms(forms, value, form_lengths)
+    return urls, forms
+
+
+def _add_flat_forms(forms, value, form_lengths):
+    """Add every wanted-length substring of value's id form to forms."""
+    flat = normalize_id(value)
+    if not flat:
+        return
+    for length in form_lengths:
+        for start in range(len(flat) - length + 1):
+            forms.add(flat[start:start + length])
 
 
 def _check_set_multiplied(items, origins, source_text):
@@ -1240,7 +1338,7 @@ def _same_text(first, second):
 
 
 def _gtin_candidates(source_text):
-    """Return [(gtin, line, previous_line)] for the marked GTINs, in order.
+    """Return [(gtin, line_index, bare)] for the marked GTINs, in order.
 
     Two rules decide what counts, and both exist because a digit run alone
     proves nothing:
@@ -1254,36 +1352,57 @@ def _gtin_candidates(source_text):
     - The run must not sit inside a link. A marketplace item number in a URL
       is a product position, not a GTIN.
 
-    previous_line is the line above, and it is passed only when this line holds
-    nothing but the keyword and the number: a supplier often prints the GTIN on
-    a line of its own under the position it belongs to. A line that carries any
-    other word ("GTIN ..., part of set") names no product either, but it is not
-    a bare GTIN line, so nothing above it is borrowed.
+    bare is True when the line holds nothing but the keyword and the number: a
+    supplier often prints the GTIN on a line of its own under the position it
+    belongs to. A line that carries any other word ("GTIN ..., part of set")
+    names no product either, but it is not a bare GTIN line, so nothing above
+    it is borrowed.
 
     The same number written twice is returned once, compared as a GTIN-14.
+
+    Each line is scanned once. The url spans are walked with one pointer and the
+    bare question is answered from the line's first and last alphanumeric
+    position, so a line of thousands of GTINs costs its own length and not its
+    length times its number count.
     """
     found = []
     seen = set()
-    lines = source_text.splitlines()
-    for index, line in enumerate(lines):
+    for index, line in enumerate(source_text.splitlines()):
         if not _GTIN_KEYWORD.search(line):
             continue
         spans = [match.span() for match in _URL.finditer(line)]
+        span_at = 0
+        first_alnum, last_alnum = _alnum_bounds(line)
         for match in _GTIN_VALUE.finditer(line):
             run = match.group(1)
             if len(run) not in GTIN_LENGTHS or not gtin_valid(run):
                 continue
-            if any(start <= match.start(1) < end for start, end in spans):
+            start = match.start(1)
+            while span_at < len(spans) and spans[span_at][1] <= start:
+                span_at += 1
+            if span_at < len(spans) and spans[span_at][0] <= start < spans[span_at][1]:
                 continue
             form = gtin14(run)
             if form in seen:
                 continue
             seen.add(form)
-            rest = line[:match.start()] + line[match.end():]
-            bare = not any(character.isalnum() for character in rest)
-            previous = lines[index - 1].strip() if index and bare else ""
-            found.append((run, line.strip(), previous))
+            bare = (first_alnum >= match.start() and last_alnum < match.end())
+            found.append((run, index, bare))
     return found
+
+
+def _alnum_bounds(line):
+    """Return (first, last) index of an alphanumeric character, or (0, -1)."""
+    first = None
+    last = -1
+    for position, char in enumerate(line):
+        if char.isalnum():
+            if first is None:
+                first = position
+            last = position
+    if first is None:
+        return (0, -1)
+    return (first, last)
 
 
 def _check_missing_gtins(items, origins, source_text):
@@ -1302,19 +1421,49 @@ def _check_missing_gtins(items, origins, source_text):
 
     An item this module appended is never a target: its fields come from a bare
     link, so it states no product that a GTIN could belong to.
+
+    An item takes at most one attached GTIN. A line that names a thousand
+    numbers names one product, so the first number is attached and the rest are
+    reported: an item that collects every number on a hostile line is not a
+    GTIN, and the mail may not cost more than its own length.
+
+    Each line is tokenised once, and the owner of a line is resolved once, no
+    matter how many GTINs stand on it. The quadratic version re-tokenised the
+    line for every number: 100 KB of numbers on one line took 186 s.
     """
     findings = []
     candidates = _gtin_candidates(source_text)
     if not candidates:
         return findings
 
+    lines = source_text.splitlines()
     carried = _carried_gtins(items)
-    for gtin, line, previous in candidates:
+    item_words = [_words(item.get("description")) if isinstance(item, dict)
+                  else set() for item in items]
+    facts = {}
+    owners = {}
+    quotes = {}
+    attached = set()
+    for gtin, line_index, bare in candidates:
         form = gtin14(gtin)
         if form in carried:
             continue
-        index, note = _gtin_owner(items, origins, line, previous)
-        evidence = "%s (%s)" % (line, note) if line else \
+        line = lines[line_index].strip()
+        previous = lines[line_index - 1].strip() if line_index and bare else ""
+        if line_index not in quotes:
+            quotes[line_index] = _quote(line)
+        key = (line_index, bare)
+        if key in owners:
+            index, note = owners[key]
+        else:
+            index, note = _gtin_owner(items, origins, previous or line,
+                                      facts, item_words)
+            owners[key] = (index, note)
+        if index is not None and index in attached:
+            note = ("the line names item %d, which already took a GTIN from "
+                    "the source" % index)
+            index = None
+        evidence = "%s (%s)" % (quotes[line_index], note) if line else \
             "GTIN %s occurs in the source text (%s)" % (gtin, note)
         if index is None:
             findings.append(_finding(
@@ -1336,6 +1485,7 @@ def _check_missing_gtins(items, origins, source_text):
             field = "gtin"
         item["uncertain"] = True
         carried.add(form)
+        attached.add(index)
         findings.append(_finding(
             "MISSING_GTIN", "attached",
             evidence=evidence,
@@ -1401,7 +1551,22 @@ def _overlap(left, right):
     return len(left & right) / float(min(len(left), len(right)))
 
 
-def _gtin_owner(items, origins, line, previous=""):
+def _line_tokens(facts, text):
+    """Return (flat, boundary, hard, glue, words) for text, computed once.
+
+    facts is a cache owned by one check. A hostile line can carry thousands of
+    GTINs, and every one of them asks about the same line, so the line is
+    tokenised once per check instead of once per number.
+    """
+    cached = facts.get(text)
+    if cached is None:
+        flat, boundary, hard, glue = _source_id_index(text)
+        cached = (flat, boundary, hard, glue, _words(text))
+        facts[text] = cached
+    return cached
+
+
+def _gtin_owner(items, origins, match_line, facts, item_words):
     """Return (index, note) for the item a GTIN line names, or (None, note).
 
     The part number on the line decides, on a token boundary. It is the one
@@ -1410,7 +1575,8 @@ def _gtin_owner(items, origins, line, previous=""):
 
     A bare GTIN line (keyword and number, nothing else) names no product of its
     own: the supplier prints it under the position it belongs to. Such a line is
-    read together with the line directly above it.
+    read together with the line directly above it, which the caller passes as
+    match_line.
 
     When neither line names a part number, the description decides, but only
     when exactly one item reaches MATCH_RATIO. A tie, or no match at all, is
@@ -1418,9 +1584,12 @@ def _gtin_owner(items, origins, line, previous=""):
 
     An item this module appended is never a candidate. It carries a link and no
     product, so it cannot own a GTIN.
+
+    facts is the line-token cache and item_words the description words of each
+    item, both built once by the caller: a line of thousands of GTINs is
+    tokenised once, not once per number.
     """
-    match_line = previous or line
-    flat, boundary, hard, glue = _source_id_index(match_line)
+    flat, boundary, hard, glue, line_words = _line_tokens(facts, match_line)
     by_part = []
     for index, item in enumerate(items):
         if not isinstance(item, dict) or origins[index] is None:
@@ -1435,11 +1604,9 @@ def _gtin_owner(items, origins, line, previous=""):
     if len(by_part) > 1:
         return None, ("the line names the part number of %d items, so the "
                       "product is ambiguous" % len(by_part))
-    line_words = _words(match_line)
     by_words = [index for index, item in enumerate(items)
                 if isinstance(item, dict) and origins[index] is not None
-                and _overlap(_words(item.get("description")), line_words)
-                >= MATCH_RATIO]
+                and _overlap(item_words[index], line_words) >= MATCH_RATIO]
     if len(by_words) == 1:
         return by_words[0], "exactly one description matches the line"
     if len(by_words) > 1:
@@ -1609,30 +1776,6 @@ def _link_id_forms(link_id):
     if separator and tail:
         forms.append(normalize_id(tail))
     return [form for form in forms if form]
-
-
-def _covers_link(item, url, link_id):
-    """True when item already stands for the product link url.
-
-    An item covers a link when it holds the same cleaned link, or when the id
-    of the link occurs in its part_number, its other_ids or its own link.
-    """
-    if not isinstance(item, dict):
-        return False
-    item_link = item.get("link")
-    if isinstance(item_link, str) and _clean_link(item_link).lower() == url.lower():
-        return True
-    forms = _link_id_forms(link_id)
-    values = [item.get("part_number"), item.get("link")]
-    values.extend(_as_list(item.get("other_ids")))
-    for value in values:
-        flat = normalize_id(value)
-        if not flat:
-            continue
-        for form in forms:
-            if form in flat:
-                return True
-    return False
 
 
 def _claims_the_line_below(line):

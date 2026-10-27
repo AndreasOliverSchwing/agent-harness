@@ -508,6 +508,21 @@ class GroundMissingGtinTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
 
+    def test_one_item_takes_at_most_one_attached_gtin(self):
+        # Both numbers sit on the one line that names the item. One item can
+        # carry one GTIN, so the second number is reported, not attached: an
+        # item that collects every number on a hostile line is not a GTIN.
+        source = ("Northwind Supply\n"
+                  "4 x Hex bolt M8  EAN 2000000000008  EAN 20000004\n")
+        extraction = {"items": [{"description": "Hex bolt M8"}]}
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["action"] for f in findings],
+                         ["attached", "reported"])
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
+        self.assertNotIn("other_ids", checked["items"][0])
+        self.assertIsNone(findings[1]["item_index"])
+        self.assertIsNone(findings[1]["new_value"])
+
 
 class GtinKeywordRuleTest(unittest.TestCase):
     """A digit run is a GTIN only with a GTIN keyword on its line (QA 6).
@@ -1019,6 +1034,73 @@ class IdentifierRegexCostTest(unittest.TestCase):
                         "ground took %.3f s on %d characters"
                         % (elapsed, len(source)))
 
+
+def _synthetic_gtin13(serial):
+    """A GTIN-13 with the internal-use prefix 2 and a valid check digit."""
+    body = "2" + ("%011d" % serial)
+    total = sum(int(digit) * (3 if position % 2 else 1)
+                for position, digit in enumerate(body))
+    return body + str((10 - total % 10) % 10)
+
+
+class HostileMailCostTest(unittest.TestCase):
+    """One hostile mail cannot cost more than its own length (S2).
+
+    A supplier mail is untrusted input, and the README promises that it stays
+    cheap. Two shapes used to cost far more than their length: one distinct
+    product link per line (the covered-link check rescanned every appended item
+    for every link), and many GTINs on one line (the GTIN owner re-tokenised the
+    line for every number).
+
+    The bound is generous: the linear code needs about a tenth of a second at
+    these sizes, and the quadratic code needed 12 s and 186 s.
+    """
+
+    SIZE = 100 * 1024
+    BOUND_SECONDS = 1.0
+
+    def test_ground_is_linear_on_one_link_per_line(self):
+        lines = ["Acme Tools - order confirmation", ""]
+        length = sum(len(line) + 1 for line in lines)
+        index = 0
+        while length < self.SIZE:
+            line = "4x https://www.ebay.de/itm/2839%06d" % index
+            lines.append(line)
+            length += len(line) + 1
+            index += 1
+        source = "\n".join(lines) + "\n"
+        started = time.perf_counter()
+        checked, findings = G.ground({"items": []}, source)
+        elapsed = time.perf_counter() - started
+        # Every link is uncovered, so the check has real work to do: it may not
+        # pass this test by finding nothing.
+        self.assertGreaterEqual(len(checked["items"]), 1000)
+        self.assertEqual(len(findings), len(checked["items"]))
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters of links"
+                        % (elapsed, len(source)))
+
+    def test_ground_is_linear_on_many_gtins_on_one_line(self):
+        parts = []
+        length = len("Acme Tools\n")
+        serial = 1
+        while length < self.SIZE:
+            chunk = "EAN %s " % _synthetic_gtin13(serial)
+            parts.append(chunk)
+            length += len(chunk)
+            serial += 1
+        source = "Acme Tools\n" + "".join(parts) + "\n"
+        extraction = {"items": [{"description": "Hex bolt M8",
+                                 "part_number": "AC-4417"}]}
+        started = time.perf_counter()
+        checked, findings = G.ground(extraction, source)
+        elapsed = time.perf_counter() - started
+        # The line names no part number of the extraction, so every GTIN is
+        # reported: the check has real work to do.
+        self.assertGreaterEqual(len(findings), 1000)
+        self.assertLess(elapsed, self.BOUND_SECONDS,
+                        "ground took %.3f s on %d characters of GTINs"
+                        % (elapsed, len(source)))
 
 class GroundUncoveredLinkTest(unittest.TestCase):
     """UNCOVERED_LINK: a product link no item covers becomes an item."""

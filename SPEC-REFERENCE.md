@@ -148,6 +148,13 @@ and `notamazon.de` are other people's domains; a product id read from them would
 point at a product that cannot be checked, and `UNCOVERED_LINK` would then append
 an item for a link that is not a shop's product page at all.
 
+An item covers a link when it holds the same cleaned link, or when the id of the
+link occurs in its `part_number`, its `other_ids` or its own `link`. The covered
+links are indexed once per mail, in a set of cleaned urls and a set of id forms,
+and an item that `UNCOVERED_LINK` appends extends that index. Asking whether a
+link is covered is therefore a lookup, not a scan of every item, so a mail with
+one uncovered link per line stays linear in its own length.
+
 ### Which digit runs are GTINs
 
 A digit run of 8, 12, 13 or 14 characters with a valid GS1 check digit is a
@@ -205,6 +212,13 @@ the product it prices, and two siblings can share every description word.
   written. One item in the extraction is not a reason to attach.
 - An item this module appended never takes a GTIN. It carries a link and no
   product.
+- An item takes at most one attached GTIN. A line that names a thousand numbers
+  names one product, so the first number is attached and the rest are reported
+  with `item_index` null. An item that collects every number on a hostile line
+  is not a GTIN.
+
+Each line is tokenised once, and the owner of a line is resolved once, no matter
+how many numbers stand on it. The GTIN check is linear in the length of the mail.
 
 ### How an id is grounded
 
@@ -407,6 +421,9 @@ Rules:
   away. `VARIANT_SPLIT` removes an item, so after a merge, every later finding can
   have `item_index` different from `input_index`, whatever its code: `item_index`
   counts the returned list, `input_index` counts the caller's list.
+- `evidence` is cut at 200 characters with `…` when the quoted line is longer.
+  A hostile mail can put 100 KB on one line, and one finding may not cost the
+  length of that line.
 - An appended item carries the marketplace id in `other_ids`
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
   `description`. Its `input_index` is `None`.

@@ -267,7 +267,11 @@ name", not as a recall rate on real extractor output.
   millisecond. The identifier path is linear too: the quantity label (`qty`,
   `Menge`, `quantity:`), the digit-run scan behind `find_gtins`, and the
   pack-marker scan that runs once per source instead of once per set line.
-  Timing tests in the suite hold those bounds.
+  The link checks and the GTIN check index their work once per mail: the links
+  the items already cover are a set of id forms, so a mail with one uncovered
+  link per line is linear, and the GTIN owner tokenises a line once, so a line
+  of thousands of numbers costs its own length. 100 KB of either shape finishes
+  in under a second. Timing tests in the suite hold those bounds.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - **An id is grounded on a token boundary, not as a substring.** A source that
