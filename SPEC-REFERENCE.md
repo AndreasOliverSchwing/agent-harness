@@ -109,6 +109,35 @@ A producer that wants to gate its own output blocks on an item with `uncertain: 
 or on a finding with action `flagged` or `reported`. Those two are the ones the module
 cannot resolve on its own. The gating policy belongs to the producer, not to the spec.
 
+### The finding contract
+
+Every finding from every check has exactly eight keys:
+
+| Key | Meaning |
+|---|---|
+| `code` | stable machine code: `UNGROUNDED_ID`, `MISSING_GTIN`, `REDACTED_LINK`, `UNCOVERED_LINK`, `SET_MULTIPLIED`, `VARIANT_SPLIT` |
+| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged` |
+| `field` | item key the finding concerns, or `None` when no single key is concerned |
+| `old_value` | what that key held before this module touched it, or `None` |
+| `new_value` | what this module wrote into that key, or `None` when it wrote nothing |
+| `item_index` | index in the returned items list, or `None` |
+| `input_index` | index in the caller's items list, or `None` for an appended item |
+| `evidence` | one short quotable sentence |
+
+Rules:
+
+- There is no `value` key. It held the old value for some codes and the new one
+  for others. Read `old_value` and `new_value`.
+- `new_value` is `None` for `flagged` and `reported`: neither writes anything. A
+  `reported` finding names the value it is about in `evidence`.
+- For the list key `other_ids`, `new_value` is the entry that was added.
+- `VARIANT_SPLIT` is the one code where the two indexes differ. `item_index` is
+  the surviving item; `input_index` is the variant line that was folded into it.
+- An appended item carries the marketplace id in `other_ids`
+  (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
+  `description`. Its `input_index` is `None`.
+- `field` is `None` when the finding is about no single item key.
+
 ## Trust boundary
 
 Specs are executable input: globs are expanded and read, patterns are compiled as

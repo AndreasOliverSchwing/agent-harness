@@ -69,6 +69,31 @@ quantity: 28 x 5
 Hex bolt set, 5-pack, part AC-4417
 """
 
+# One input that makes every check fire: an uncovered link, a set line with its
+# pack marker, a GTIN no item carries, a cut link the source can restore and a
+# variant line with no quantity of its own.
+ALL_CHECKS_SOURCE = """\
+Acme Tools - order confirmation
+4x https://www.amazon.de/dp/B0TEST1234
+quantity: 28 x 5
+Hex bolt set, 5-pack, part AC-4417
+Washer 12 mm  GTIN 4006381333931
+%s
+""" % ALIEXPRESS_LINK
+
+ALL_CHECKS_EXTRACTION = {"items": [
+    {"description": "Hex bolt set, 5-pack", "part_number": "AC-9999",
+     "quantity": 140},
+    {"description": "Washer 12 mm"},
+    {"description": "Widget",
+     "link": "https://de.aliexpress.com/item/1[Telefon]234567"},
+    {"description": "Hex bolt variant zinc", "part_number": "AC-9999"},
+]}
+
+# The one key set every finding has, in every check. See SPEC-REFERENCE.md.
+FINDING_KEYS = {"code", "action", "field", "old_value", "new_value",
+                "item_index", "input_index", "evidence"}
+
 
 class GtinCheckDigitTest(unittest.TestCase):
     """The GS1 rule, on every length the module claims to support."""
@@ -175,7 +200,10 @@ class GroundIdentifierTest(unittest.TestCase):
         finding = findings[0]
         self.assertEqual(finding["code"], "UNGROUNDED_ID")
         self.assertEqual(finding["item_index"], 0)
-        self.assertEqual(finding["value"], "AC-9999")
+        self.assertEqual(finding["input_index"], 0)
+        self.assertEqual(finding["field"], "part_number")
+        self.assertEqual(finding["old_value"], "AC-9999")
+        self.assertIsNone(finding["new_value"])
         self.assertEqual(finding["action"], "flagged")
         self.assertTrue(checked["items"][0]["uncertain"])
         # The value stays. A checker that deletes hides the extractor's mistake.
@@ -186,7 +214,8 @@ class GroundIdentifierTest(unittest.TestCase):
                                  "gtin": "96385074"}]}
         checked, findings = G.ground(extraction, ID_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"])
-        self.assertEqual(findings[0]["value"], "96385074")
+        self.assertEqual(findings[0]["field"], "gtin")
+        self.assertEqual(findings[0]["old_value"], "96385074")
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_ground_leaves_grounded_id_alone(self):
@@ -240,8 +269,14 @@ class GroundMissingGtinTest(unittest.TestCase):
         finding = findings[0]
         self.assertEqual(finding["code"], "MISSING_GTIN")
         self.assertIsNone(finding["item_index"])
+        self.assertIsNone(finding["input_index"])
         self.assertEqual(finding["action"], "reported")
-        self.assertEqual(finding["value"], "4006381333931")
+        self.assertEqual(finding["field"], "gtin")
+        # Nothing was written, so both value slots are empty. The value the
+        # finding is about is named in evidence.
+        self.assertIsNone(finding["old_value"])
+        self.assertIsNone(finding["new_value"])
+        self.assertIn("4006381333931", finding["evidence"])
         # Nothing was attached to either item.
         self.assertNotIn("gtin", checked["items"][0])
         self.assertNotIn("gtin", checked["items"][1])
@@ -308,15 +343,61 @@ class GroundContractTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings],
                          ["UNGROUNDED_ID", "MISSING_GTIN"])
         for finding in findings:
-            self.assertEqual(set(finding),
-                             {"code", "item_index", "value", "evidence",
-                              "action"})
+            self.assertEqual(set(finding), FINDING_KEYS)
             self.assertIsInstance(finding["code"], str)
-            self.assertIsInstance(finding["value"], str)
             self.assertIsInstance(finding["evidence"], str)
             self.assertIsInstance(finding["action"], str)
             self.assertTrue(finding["item_index"] is None
                             or isinstance(finding["item_index"], int))
+            self.assertTrue(finding["input_index"] is None
+                            or isinstance(finding["input_index"], int))
+
+
+class FindingContractTest(unittest.TestCase):
+    """One finding shape for all six checks, documented in SPEC-REFERENCE.md."""
+
+    def test_every_check_uses_the_documented_keys(self):
+        checked, findings = G.ground(copy.deepcopy(ALL_CHECKS_EXTRACTION),
+                                     ALL_CHECKS_SOURCE)
+        codes = sorted(set(f["code"] for f in findings))
+        self.assertEqual(codes, ["MISSING_GTIN", "REDACTED_LINK",
+                                 "SET_MULTIPLIED", "UNCOVERED_LINK",
+                                 "UNGROUNDED_ID", "VARIANT_SPLIT"])
+        for finding in findings:
+            self.assertEqual(set(finding), FINDING_KEYS, finding["code"])
+            self.assertNotIn("value", finding)
+            self.assertIsInstance(finding["action"], str)
+            self.assertIsInstance(finding["evidence"], str)
+            self.assertTrue(finding["field"] is None
+                            or isinstance(finding["field"], str))
+            for key in ("item_index", "input_index"):
+                self.assertTrue(finding[key] is None
+                                or isinstance(finding[key], int), finding["code"])
+
+    def test_item_index_points_into_the_returned_list(self):
+        extraction = {"items": [
+            {"description": "Hex bolt set", "part_number": "AC-4417",
+             "quantity": 4},
+            {"description": "IO link variant", "part_number": "AC-4417"},
+        ]}
+        checked, findings = G.ground(extraction, "Acme Tools\npart AC-4417\n")
+        finding = findings[0]
+        self.assertEqual(finding["code"], "VARIANT_SPLIT")
+        # The finding concerns the merged-away line, so the two indexes differ.
+        self.assertEqual(finding["input_index"], 1)
+        self.assertEqual(finding["item_index"], 0)
+        self.assertEqual(checked["items"][finding["item_index"]]["quantity"], 4)
+        self.assertEqual(finding["field"], "note")
+        self.assertIsNone(finding["old_value"])
+        self.assertEqual(finding["new_value"], "variant: IO link variant")
+
+    def test_item_index_is_none_only_when_no_item_is_concerned(self):
+        checked, findings = G.ground({"items": [{"description": "Paint brush"},
+                                                {"description": "Garden hose"}]},
+                                     ONE_GTIN_SOURCE)
+        self.assertEqual(len(findings), 1)
+        self.assertIsNone(findings[0]["item_index"])
+        self.assertIsNone(findings[0]["input_index"])
 
 
 class FindLinksTest(unittest.TestCase):
@@ -392,12 +473,18 @@ class GroundUncoveredLinkTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "UNCOVERED_LINK"])
         self.assertEqual(findings[0]["action"], "added")
-        self.assertEqual(findings[0]["value"], "ASIN:B0TEST1234")
+        self.assertEqual(findings[0]["field"], "link")
+        self.assertEqual(findings[0]["new_value"], AMAZON_LINK)
         self.assertEqual(findings[0]["item_index"], 0)
+        # An appended item has no place in the caller's input list.
+        self.assertIsNone(findings[0]["input_index"])
         item = checked["items"][0]
-        self.assertEqual(item["description"], "ASIN:B0TEST1234")
         self.assertEqual(item["link"], AMAZON_LINK)
-        self.assertEqual(item["part_number"], "ASIN:B0TEST1234")
+        # A marketplace id is a marketplace id, not a part number and not a
+        # description. It goes where the data model keeps it.
+        self.assertEqual(item["other_ids"], ["ASIN:B0TEST1234"])
+        self.assertNotIn("part_number", item)
+        self.assertNotIn("description", item)
         self.assertEqual(item["quantity"], 4)
         self.assertEqual(item["unit"], "piece")
         self.assertTrue(item["uncertain"])
@@ -405,7 +492,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
     def test_ground_takes_link_quantity_from_previous_line(self):
         # The line above the eBay link holds nothing but "2".
         checked, findings = G.ground({"items": []}, LINK_SOURCE)
-        self.assertEqual(findings[1]["value"], "EBAY:123456789001")
+        self.assertEqual(findings[1]["new_value"], EBAY_LINK)
         self.assertEqual(findings[1]["item_index"], 1)
         self.assertEqual(checked["items"][1]["quantity"], 2)
 
@@ -429,7 +516,7 @@ class GroundUncoveredLinkTest(unittest.TestCase):
                                  "link": AMAZON_LINK}]}
         checked, findings = G.ground(extraction, LINK_SOURCE)
         # Only the eBay link is new.
-        self.assertEqual([f["value"] for f in findings], ["EBAY:123456789001"])
+        self.assertEqual([f["new_value"] for f in findings], [EBAY_LINK])
         self.assertEqual(len(checked["items"]), 2)
 
     def test_ground_ignores_link_that_is_not_a_product(self):
@@ -451,7 +538,10 @@ class GroundRedactedLinkTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings], ["REDACTED_LINK"])
         self.assertEqual(findings[0]["action"], "restored")
         self.assertEqual(findings[0]["item_index"], 0)
-        self.assertEqual(findings[0]["value"], ALIEXPRESS_LINK)
+        self.assertEqual(findings[0]["field"], "link")
+        self.assertEqual(findings[0]["old_value"],
+                         "https://de.aliexpress.com/item/1[Telefon]234567")
+        self.assertEqual(findings[0]["new_value"], ALIEXPRESS_LINK)
         self.assertEqual(checked["items"][0]["link"], ALIEXPRESS_LINK)
 
     def test_ground_leaves_short_placeholder_alone(self):
@@ -488,7 +578,9 @@ class GroundSetMultipliedTest(unittest.TestCase):
         checked, findings = G.ground(extraction, SET_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "corrected")
-        self.assertEqual(findings[0]["value"], "140")
+        self.assertEqual(findings[0]["field"], "quantity")
+        self.assertEqual(findings[0]["old_value"], 140)
+        self.assertEqual(findings[0]["new_value"], 28)
         self.assertEqual(checked["items"][0]["quantity"], 28)
         self.assertEqual(checked["items"][0]["unit"], "set")
         self.assertTrue(checked["items"][0]["uncertain"])
@@ -602,10 +694,7 @@ class GroundLinkContractTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "SET_MULTIPLIED"])
         for finding in findings:
-            self.assertEqual(set(finding),
-                             {"code", "item_index", "value", "evidence",
-                              "action"})
-            self.assertIsInstance(finding["value"], str)
+            self.assertEqual(set(finding), FINDING_KEYS)
             self.assertIsInstance(finding["evidence"], str)
             self.assertIsInstance(finding["action"], str)
             self.assertTrue(finding["item_index"] is None

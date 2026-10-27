@@ -130,7 +130,7 @@ input, never calls a model, never opens a socket.
 import harness_grounding as g
 
 source = """Example Tool Supply - order request
-Cordless impact driver 18 V, part AC-4417, GTIN 4006381333931
+Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 4006381333931
 quantity: 3 x 4
 """
 
@@ -143,13 +143,43 @@ extraction = {"items": [{
 
 checked, findings = g.ground(extraction, source)
 for finding in findings:
-    print(finding["code"], finding["action"], finding["value"])
+    print(finding["code"], finding["action"], finding["field"],
+          finding["old_value"], "->", finding["new_value"])
 ```
 
 That extraction is well-formed and wrong in three ways. It prints
-`UNGROUNDED_ID flagged AC-9999`, `SET_MULTIPLIED corrected 12` and
-`MISSING_GTIN attached 4006381333931`. The full runnable version is
+`UNGROUNDED_ID flagged part_number AC-9999 -> None`,
+`SET_MULTIPLIED corrected quantity 12 -> 3` and
+`MISSING_GTIN attached gtin None -> 4006381333931`. The full runnable version is
 `python3 examples/grounding_example.py`.
+
+### The finding contract
+
+Every finding, from every check, has exactly these eight keys:
+
+| Key | Meaning |
+|---|---|
+| `code` | stable machine code, one of the six below |
+| `action` | what `ground()` did: `flagged`, `attached`, `reported`, `restored`, `added`, `corrected`, `merged` |
+| `field` | the item key the finding concerns (`part_number`, `gtin`, `link`, `quantity`, `note`, `other_ids`), or `None` when no single key is concerned |
+| `old_value` | what that key held before this module touched it; `None` when the key was absent or empty |
+| `new_value` | what this module wrote into that key; `None` when it wrote nothing |
+| `item_index` | index of the item in the **returned** items list, or `None` |
+| `input_index` | index of that item in the list **you passed in**, or `None` for an item this module appended |
+| `evidence` | one short quotable sentence, safe to show a human |
+
+There is no `value` key. It was ambiguous: it held the old value for some codes
+and the new one for others. Read `old_value` and `new_value`.
+
+`new_value` is `None` for a `flagged` or `reported` finding, because neither
+writes anything. A `reported` finding names the value it is about in `evidence`.
+For the list key `other_ids`, `new_value` is the entry that was added.
+
+`VARIANT_SPLIT` is the one code where the two indexes differ: `item_index` is
+the surviving item, `input_index` is the variant line that was folded into it.
+An item this module appends for an uncovered link has `input_index: None` and
+carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
+`part_number` or `description`.
 
 ### The six checks
 
@@ -158,7 +188,7 @@ That extraction is well-formed and wrong in three ways. It prints
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text | flags it, sets `uncertain: true`, keeps the item and the value |
 | `MISSING_GTIN` | a valid GTIN in the source that no item carries | attaches it to the best-matching item (`attached`), or reports it with no item when nothing matches (`reported`) |
 | `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link from the source text |
-| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, `uncertain: true` |
+| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true` |
 | `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4 | sets quantity 3, unit `set`, `uncertain: true` |
 | `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note, reports `merged` |
 

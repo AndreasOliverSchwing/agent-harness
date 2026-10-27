@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import harness_grounding as g
 
 SOURCE = """Example Tool Supply - order request
-Cordless impact driver 18 V, part AC-4417, GTIN 4006381333931
+Cordless impact driver 18 V 4-pack, part AC-4417, GTIN 4006381333931
 quantity: 3 x 4
 """
 
@@ -50,12 +50,14 @@ def main():
 
     print("\nfindings: %d" % len(findings))
     for finding in findings:
-        print("  %-14s %-9s %-16s %s" % (
+        print("  %-14s %-10s %-11s %s -> %s" % (
             finding["code"],
             finding["action"],
-            finding["value"],
-            finding["evidence"],
+            finding["field"],
+            finding["old_value"],
+            finding["new_value"],
         ))
+        print("  %-14s %s" % ("", finding["evidence"]))
 
     print("\nchecked output (input left unchanged):")
     print(json.dumps(checked, indent=2))

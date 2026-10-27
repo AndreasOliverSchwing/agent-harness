@@ -8,9 +8,9 @@ least trustworthy.
 
 The job is narrow. An extractor reads a supplier mail or a PDF and returns
 items. This module compares those items against the source text and marks the
-ones the source does not support. It never deletes an item and never rewrites a
-value into something the source does not say. It only adds a flag, attaches a
-value the source proves, or reports a fact.
+ones the source does not support. It never rewrites a value into something the
+source does not say, and it reports every change it makes. VARIANT_SPLIT is the
+only check that removes an item; it reports the merge.
 
 Data model — plain dicts, no classes, missing keys allowed everywhere.
 
@@ -32,34 +32,66 @@ extraction = {
 
 finding = {
     "code": "UNGROUNDED_ID",   # stable machine code, see below
-    "item_index": 0,           # int index into extraction["items"], or None
-    "value": "AC-9999",        # the value the finding is about
-    "evidence": "...",         # short quotable reason, safe to show a human
     "action": "flagged",       # what ground() did about it
+    "field": "part_number",    # item key the finding concerns, or None
+    "old_value": "AC-9999",    # value the field held before, or None
+    "new_value": None,         # value written into the field, None if none
+    "item_index": 0,           # index into the RETURNED items list, or None
+    "input_index": 0,          # index into the CALLER's items list, or None
+    "evidence": "...",         # short quotable reason, safe to show a human
 }
+
+THE FINDING CONTRACT. Every finding from every check carries exactly those
+eight keys and no others. The rules, once, for all six checks:
+
+    code, action   the machine code and what ground() did about it.
+    field          the item key the finding concerns: "part_number", "gtin",
+                   "link", "quantity", "note", "other_ids", or None when no
+                   single key is concerned.
+    old_value      what that key held before this module touched it. None when
+                   the key was absent or empty.
+    new_value      what this module wrote into that key. None when it wrote
+                   nothing, which is what a "flagged" or "reported" finding
+                   does. For the list key other_ids it is the entry added.
+    item_index     index of the item in the RETURNED items list. None when no
+                   item is concerned.
+    input_index    index of that item in the list the caller passed in. None
+                   for an item this module appended, because it has no place in
+                   the caller's input.
+
+A finding never carries a bare "value" key. It is ambiguous: it held the old
+value for some codes and the new one for others. Read old_value and new_value.
+
+An appended item never invents a part number or a description. A marketplace id
+belongs in other_ids, so an item added for an uncovered link carries
+other_ids ["ASIN:..."], the link, the quantity and the unit, nothing else.
 
 Codes and actions in this module:
 
     UNGROUNDED_ID / "flagged"    an item id does not occur in the source text.
-                                 The item stays; uncertain is set True.
+                                 field is the key, old_value the id. The item
+                                 stays; uncertain is set True.
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
                                  extraction. It is attached to the best-matching
-                                 item, which is marked uncertain.
+                                 item, which is marked uncertain. field is
+                                 "gtin" or "other_ids", new_value the GTIN.
     MISSING_GTIN  / "reported"   same, but no item could take it. The finding
-                                 has item_index None and nothing is changed.
+                                 has item_index None, both value slots None and
+                                 nothing is changed; evidence names the GTIN.
     REDACTED_LINK / "restored"   an item link was cut by a redaction
                                  placeholder such as "[Telefon]". The link from
-                                 the source text is put back.
+                                 the source text is put back. field is "link".
     UNCOVERED_LINK / "added"     a product link in the source that no item
                                  covers. A new item is appended and marked
-                                 uncertain.
+                                 uncertain. field is "link", new_value the link.
     SET_MULTIPLIED / "corrected" the source says "N x M" and the item is an
                                  M-pack with quantity N*M. The quantity becomes
                                  N, the unit "set", and the item is marked
-                                 uncertain.
+                                 uncertain. field is "quantity".
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
+                                 field is "note", new_value the note added.
 
 A link is a product link only when product_link_id() returns an id for it. A
 link to any other host is not a product and is never added as an item.
@@ -70,10 +102,9 @@ Findings come in a stable order: VARIANT_SPLIT in item order, then
 UNGROUNDED_ID in item order, then REDACTED_LINK and UNCOVERED_LINK in source
 order, then SET_MULTIPLIED in source order, then MISSING_GTIN in source order.
 
-Every finding carries an item_index that is valid in the returned item list.
-VARIANT_SPLIT runs first because it is the only check that removes an item;
-UNGROUNDED_ID runs before any item is appended, so an item this module adds is
-never flagged against itself.
+VARIANT_SPLIT runs first because it is the only check that removes an item, so
+every later item_index is already final. UNGROUNDED_ID runs before any item is
+appended, so an item this module adds is never flagged against itself.
 
     import harness_grounding as g
     checked, findings = g.ground(extraction, source_text)
@@ -313,27 +344,46 @@ def ground(extraction, source_text):
         source_text = ""
 
     flat_source = normalize_id(source_text)
+    # origins[i] is the index of items[i] in the caller's list, or None for an
+    # item this module appended. It moves with every pop and append, so a
+    # finding can name both the returned position and the input position.
+    origins = list(range(len(items)))
     findings = []
     # VARIANT_SPLIT runs first because it is the only check that removes an
     # item. Every finding recorded after it therefore carries an index that is
     # still valid in the final list. UNGROUNDED_ID runs before any item is
     # appended, so an item this module adds is never flagged against itself.
-    findings.extend(_check_variant_split(items))
-    findings.extend(_check_ids(items, flat_source))
-    findings.extend(_check_redacted_links(items, source_text))
-    findings.extend(_check_uncovered_links(items, source_text))
-    findings.extend(_check_set_multiplied(items, source_text))
-    findings.extend(_check_missing_gtins(items, source_text))
+    findings.extend(_check_variant_split(items, origins))
+    findings.extend(_check_ids(items, origins, flat_source))
+    findings.extend(_check_redacted_links(items, origins, source_text))
+    findings.extend(_check_uncovered_links(items, origins, source_text))
+    findings.extend(_check_set_multiplied(items, origins, source_text))
+    findings.extend(_check_missing_gtins(items, origins, source_text))
     return checked, findings
+
+
+def _finding(code, action, evidence, field=None, old_value=None,
+             new_value=None, item_index=None, input_index=None):
+    """Build one finding with the documented eight keys, in a fixed order."""
+    return {
+        "code": code,
+        "action": action,
+        "field": field,
+        "old_value": old_value,
+        "new_value": new_value,
+        "item_index": item_index,
+        "input_index": input_index,
+        "evidence": evidence,
+    }
 
 
 # ── checks ─────────────────────────────────────────────────────────────────
 
-def _check_ids(items, flat_source):
+def _check_ids(items, origins, flat_source):
     """UNGROUNDED_ID: flag item ids that do not occur in the normalized source.
 
-    Only part_number and gtin are checked in this card. A value shorter than
-    MIN_ID_LEN is skipped: it is too common to prove or disprove.
+    Only part_number and gtin are checked. A value shorter than MIN_ID_LEN is
+    skipped: it is too common to prove or disprove.
     """
     findings = []
     for index, item in enumerate(items):
@@ -347,18 +397,18 @@ def _check_ids(items, flat_source):
             if len(flat) < MIN_ID_LEN or flat in flat_source:
                 continue
             item["uncertain"] = True
-            findings.append({
-                "code": "UNGROUNDED_ID",
-                "item_index": index,
-                "value": raw if isinstance(raw, str) else str(raw),
-                "evidence": "%s=%s normalizes to %s, which does not occur in "
-                            "the source text" % (key, raw, flat),
-                "action": "flagged",
-            })
+            findings.append(_finding(
+                "UNGROUNDED_ID", "flagged",
+                evidence="%s=%s normalizes to %s, which does not occur in "
+                         "the source text" % (key, raw, flat),
+                field=key,
+                old_value=raw if isinstance(raw, str) else str(raw),
+                item_index=index,
+                input_index=origins[index]))
     return findings
 
 
-def _check_redacted_links(items, source_text):
+def _check_redacted_links(items, origins, source_text):
     """REDACTED_LINK: put back a product link that a redaction cut in two.
 
     A redaction pass that protects phone numbers can hit a long digit run in a
@@ -386,26 +436,28 @@ def _check_redacted_links(items, source_text):
             if not candidate.startswith(prefix):
                 continue
             item["link"] = candidate
-            findings.append({
-                "code": "REDACTED_LINK",
-                "item_index": index,
-                "value": candidate,
-                "evidence": "item link %s was cut at character %d by a "
-                            "redaction placeholder; the source holds %s"
-                            % (link, cut, candidate),
-                "action": "restored",
-            })
+            findings.append(_finding(
+                "REDACTED_LINK", "restored",
+                evidence="item link %s was cut at character %d by a "
+                         "redaction placeholder; the source holds %s"
+                         % (link, cut, candidate),
+                field="link",
+                old_value=link,
+                new_value=candidate,
+                item_index=index,
+                input_index=origins[index]))
             break
     return findings
 
 
-def _check_uncovered_links(items, source_text):
+def _check_uncovered_links(items, origins, source_text):
     """UNCOVERED_LINK: add an item for a product link that no item covers.
 
     A product link in the source is a position the extractor missed. The item
     is appended, never inserted, so the extractor's own order stays readable.
     The quantity comes from the same line ("4x <link>") or from the line above
-    when that line holds nothing but a quantity.
+    when that line holds nothing but a quantity. The marketplace id goes into
+    other_ids: it is not a part number and not a description.
     """
     findings = []
     lines = source_text.splitlines()
@@ -422,25 +474,25 @@ def _check_uncovered_links(items, source_text):
             if any(_covers_link(item, url, link_id) for item in items):
                 continue
             items.append({
-                "description": link_id,
+                "other_ids": [link_id],
                 "link": url,
-                "part_number": link_id,
                 "quantity": _link_quantity(lines, line_index, line,
                                            match.group(0)),
                 "unit": "piece",
                 "uncertain": True,
             })
-            findings.append({
-                "code": "UNCOVERED_LINK",
-                "item_index": len(items) - 1,
-                "value": link_id,
-                "evidence": line.strip() or url,
-                "action": "added",
-            })
+            origins.append(None)
+            findings.append(_finding(
+                "UNCOVERED_LINK", "added",
+                evidence=line.strip() or url,
+                field="link",
+                new_value=url,
+                item_index=len(items) - 1,
+                input_index=None))
     return findings
 
 
-def _check_set_multiplied(items, source_text):
+def _check_set_multiplied(items, origins, source_text):
     """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces.
 
     The source writes "quantity: 28 x 5" for 28 sets of 5. An extractor that
@@ -461,22 +513,24 @@ def _check_set_multiplied(items, source_text):
                 continue
             if not _marks_pack(item.get("description"), pack):
                 continue
+            old = item.get("quantity")
             item["quantity"] = outer
             item["unit"] = "set"
             item["uncertain"] = True
-            findings.append({
-                "code": "SET_MULTIPLIED",
-                "item_index": index,
-                "value": str(outer * pack),
-                "evidence": "source says \"%s\": %d sets of %d, so the "
-                            "quantity is %d sets and not %d pieces"
-                            % (match.group(0), outer, pack, outer, outer * pack),
-                "action": "corrected",
-            })
+            findings.append(_finding(
+                "SET_MULTIPLIED", "corrected",
+                evidence="source says \"%s\": %d sets of %d, so the "
+                         "quantity is %d sets and not %d pieces"
+                         % (match.group(0), outer, pack, outer, outer * pack),
+                field="quantity",
+                old_value=old,
+                new_value=outer,
+                item_index=index,
+                input_index=origins[index]))
     return findings
 
 
-def _check_variant_split(items):
+def _check_variant_split(items, origins):
     """VARIANT_SPLIT: fold a variant line back into the item it belongs to.
 
     A supplier lists one part number twice, once per variant, under one
@@ -513,21 +567,25 @@ def _check_variant_split(items):
         if isinstance(item.get("link"), str) and not first.get("link"):
             first["link"] = item["link"]
         first["uncertain"] = True
+        # The finding concerns the line that was folded away, so input_index
+        # names it. Capture it before the pop shortens the list.
+        variant_input = origins[index]
         items.pop(index)
-        findings.append({
-            "code": "VARIANT_SPLIT",
-            "item_index": first_index,
-            "value": str(first.get("part_number") or number),
-            "evidence": "items share part number %s and \"%s\" has no quantity "
-                        "of its own, so it is a variant of the first item"
-                        % (number, label),
-            "action": "merged",
-        })
+        origins.pop(index)
+        findings.append(_finding(
+            "VARIANT_SPLIT", "merged",
+            evidence="items share part number %s and \"%s\" has no quantity "
+                     "of its own, so it is a variant of the first item"
+                     % (number, label),
+            field="note",
+            new_value=piece,
+            item_index=first_index,
+            input_index=variant_input))
     findings.sort(key=lambda finding: finding["item_index"])
     return findings
 
 
-def _check_missing_gtins(items, source_text):
+def _check_missing_gtins(items, origins, source_text):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
 
     The target item is the one whose description shares at least MATCH_RATIO of
@@ -549,13 +607,12 @@ def _check_missing_gtins(items, source_text):
         line = _line_with(lines, gtin)
         index = _best_item(items, line)
         if index is None:
-            findings.append({
-                "code": "MISSING_GTIN",
-                "item_index": None,
-                "value": gtin,
-                "evidence": line or "GTIN %s occurs in the source text" % gtin,
-                "action": "reported",
-            })
+            findings.append(_finding(
+                "MISSING_GTIN", "reported",
+                evidence=line or "GTIN %s occurs in the source text" % gtin,
+                field="gtin",
+                item_index=None,
+                input_index=None))
             continue
 
         item = items[index]
@@ -563,17 +620,19 @@ def _check_missing_gtins(items, source_text):
             others = _as_list(item.get("other_ids"))
             others.append(gtin)
             item["other_ids"] = others
+            field = "other_ids"
         else:
             item["gtin"] = gtin
+            field = "gtin"
         item["uncertain"] = True
         carried.add(gtin)
-        findings.append({
-            "code": "MISSING_GTIN",
-            "item_index": index,
-            "value": gtin,
-            "evidence": line or "GTIN %s occurs in the source text" % gtin,
-            "action": "attached",
-        })
+        findings.append(_finding(
+            "MISSING_GTIN", "attached",
+            evidence=line or "GTIN %s occurs in the source text" % gtin,
+            field=field,
+            new_value=gtin,
+            item_index=index,
+            input_index=origins[index]))
     return findings
 
 
