@@ -1051,6 +1051,56 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 28)
 
+    def test_a_set_line_does_not_correct_another_products_item(self):
+        # QA 10 follow-up. The "2er-Pack" on the second line belongs to the
+        # Kabelbinder, and the set line on that line belongs to it too. The
+        # screws are 8 pieces, and no check may rewrite that from another
+        # product's line.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 8},
+            {"part_number": "NW-22010", "quantity": 4, "unit": "set"},
+        ]}
+        source = ("AC-44170 Schraube 8 St\u00fcck\n"
+                  "NW-22010 Kabelbinder 2er-Pack, Menge: 4 x 2")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertNotIn("unit", checked["items"][0])
+        self.assertNotIn("uncertain", checked["items"][0])
+
+    def test_a_pack_marker_of_another_product_is_not_evidence(self):
+        # QA 10 follow-up. The only pack marker in the mail sits on the
+        # Kabelbinder line, two lines away from the screws. The set line names
+        # no item of its own, so the screws keep their 8 pieces.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
+        source = ("AC-44170 Schraube\n"
+                  "Menge: 4 x 2\n"
+                  "NW-22010 Kabelbinder 2er-Pack, 1 St\u00fcck")
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(findings, [])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        self.assertNotIn("uncertain", checked["items"][0])
+
+    def test_a_pack_marker_on_the_items_own_line_still_corrects(self):
+        # The pack marker and the part number are on one line, so the set line
+        # below it belongs to this item.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
+        source = "AC-44170 2-pack\nMenge: 4 x 2"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+
+    def test_a_set_line_corrects_the_item_on_the_line_below(self):
+        # The window works in both directions: the item line may follow the set
+        # line, which is how a supplier writes a position.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 8}]}
+        source = "Menge: 4 x 2\nAC-44170 2-pack"
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+
 
 class GroundVariantSplitTest(unittest.TestCase):
     """VARIANT_SPLIT: one part number under one quantity is one item."""

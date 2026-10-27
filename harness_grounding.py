@@ -102,9 +102,12 @@ Codes and actions in this module:
                                  covers. A new item is appended and marked
                                  uncertain. field is "link", new_value the link.
     SET_MULTIPLIED / "corrected" the source says "N x M" and the item is an
-                                 M-pack with quantity N*M. The quantity becomes
-                                 N, the unit "set", and the item is marked
-                                 uncertain. field is "quantity".
+                                 M-pack with quantity N*M, and the set line
+                                 belongs to that item (the item is grounded on
+                                 the set line or the line next to it, and the
+                                 pack marker sits on that same line). The
+                                 quantity becomes N, the unit "set", and the
+                                 item is marked uncertain. field is "quantity".
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
@@ -138,6 +141,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+from bisect import bisect_right
 from decimal import Decimal
 from urllib.parse import urlsplit
 
@@ -332,6 +336,10 @@ _PACK_MARKERS = (
     re.compile(r"\bset\s+of\s+(\d{1,4})\b", re.IGNORECASE),
     re.compile(r"(?<!\d)(\d{1,4})\s*er\b", re.IGNORECASE),
 )
+
+# The line breaks str.splitlines() splits on. A set line is placed on the line
+# it starts on, so the offsets of the lines are needed, not only their text.
+_LINE_BREAK = re.compile("\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
 
 
 def _is_ascii_digits(text):
@@ -833,43 +841,97 @@ def _check_set_multiplied(items, origins, source_text):
     reports 140 pieces has lost the set, and the quote then prices 140 single
     items. The quantity is set back to the number of sets.
 
-    Two rules keep the correction honest. The pack size comes from the source
+    Three rules keep the correction honest. The pack size comes from the source
     text only: a pack word in the extractor's description is the extractor's
-    own claim and proves nothing about the order. And an item is corrected at
-    most once, so a second set line cannot compound one correction into
-    another (8 -> 4 -> 2).
+    own claim and proves nothing about the order. An item is corrected at most
+    once, so a second set line cannot compound one correction into another
+    (8 -> 4 -> 2). And a set line corrects only the item it belongs to: the
+    item must be grounded on a line of the set block -- the set line itself, or
+    the line directly before or after the block -- and a pack marker that names
+    the same pack size must sit on that same line. A pack marker on another
+    product's line is another product's pack, so a missed correction is the
+    safe answer.
+
+    The lines are walked once, not once per set line. Every set line of one
+    block shares one window, so a block is resolved in a single pass over its
+    lines: each line offers the items it grounds, and the earliest set line that
+    fits an item's quantity corrects it. A mail with a thousand positions stays
+    linear, which matters on untrusted text.
     """
     findings = []
     corrected = set()
-    packs = _marked_pack_sizes(source_text)
-    for match in _SET_LINE.finditer(source_text):
-        outer = int(match.group(1))
-        pack = int(match.group(2))
-        # A "1 x 1" is not a set and "0" is not an order.
-        if outer <= 0 or pack <= 1:
+    bodies, starts = _source_lines(source_text)
+    if not bodies:
+        return findings
+    matches = list(_SET_LINE.finditer(source_text))
+    if not matches:
+        return findings
+    # The line of each set line. A set line may run over a line break, because
+    # the spaces around the "x" may be a newline; it then belongs to the line it
+    # starts on.
+    line_of = [bisect_right(starts, match.start()) - 1 for match in matches]
+    has_set = [False] * len(bodies)
+    by_line = {}
+    for position, line_index in enumerate(line_of):
+        if 0 <= line_index < len(bodies):
+            has_set[line_index] = True
+            by_line.setdefault(line_index, []).append(matches[position])
+    facts = None
+    grounded = []
+    for first, last in _set_blocks(has_set):
+        # The earliest set line that fits a quantity, per pack size. A later set
+        # line of the same block could not correct the item first, so it never
+        # wins. A "1 x 1" is not a set and "0" is not an order.
+        earliest = {}
+        for line_index in range(first, last + 1):
+            for match in by_line.get(line_index, ()):
+                outer = int(match.group(1))
+                pack = int(match.group(2))
+                if outer <= 0 or pack <= 1:
+                    continue
+                key = (pack, outer * pack)
+                if key not in earliest:
+                    earliest[key] = (match.start(), outer, match)
+        if not earliest:
             continue
-        if pack not in packs:
-            continue
-        for index, item in enumerate(items):
-            if index in corrected or not isinstance(item, dict):
+        if facts is None:
+            facts = _line_facts(bodies)
+            grounded = _grounded_by_line(items, facts)
+        block_findings = []
+        for line_index in _set_block_window(has_set, first):
+            packs = facts[line_index]["packs"]
+            if not packs:
                 continue
-            if _quantity_of(item) != outer * pack:
-                continue
-            old = item.get("quantity")
-            item["quantity"] = outer
-            item["unit"] = "set"
-            item["uncertain"] = True
-            corrected.add(index)
-            findings.append(_finding(
-                "SET_MULTIPLIED", "corrected",
-                evidence="source says \"%s\": %d sets of %d, so the "
-                         "quantity is %d sets and not %d pieces"
-                         % (match.group(0), outer, pack, outer, outer * pack),
-                field="quantity",
-                old_value=old,
-                new_value=outer,
-                item_index=index,
-                input_index=origins[index]))
+            for item_index in grounded[line_index]:
+                if item_index in corrected:
+                    continue
+                item = items[item_index]
+                quantity = _quantity_of(item)
+                for pack in packs:
+                    entry = earliest.get((pack, quantity))
+                    if entry is None:
+                        continue
+                    start, outer, match = entry
+                    old = item.get("quantity")
+                    item["quantity"] = outer
+                    item["unit"] = "set"
+                    item["uncertain"] = True
+                    corrected.add(item_index)
+                    block_findings.append((start, item_index, _finding(
+                        "SET_MULTIPLIED", "corrected",
+                        evidence="source says \"%s\": %d sets of %d, so the "
+                                 "quantity is %d sets and not %d pieces"
+                                 % (match.group(0), outer, pack, outer,
+                                    outer * pack),
+                        field="quantity",
+                        old_value=old,
+                        new_value=outer,
+                        item_index=item_index,
+                        input_index=origins[item_index])))
+                    break
+        # Findings come in source order of the set line that corrected them.
+        block_findings.sort(key=lambda row: (row[0], row[1]))
+        findings.extend(row[2] for row in block_findings)
     return findings
 
 
@@ -1393,7 +1455,8 @@ def _marked_pack_sizes(text):
     "5 pack", "5-pack", "5er-Pack", "5er Pack", "pack of 5", "set of 5" and
     "5er" all say the same thing, so the sizes are collected once per text. A
     per-match scan over the whole text is quadratic: 1,000 set lines in one
-    16 KB mail took 1.2 s.
+    16 KB mail took 1.2 s. The set check calls this once per line, which keeps
+    the work linear in the length of the mail.
     """
     sizes = set()
     if not isinstance(text, str) or not text:
@@ -1402,3 +1465,182 @@ def _marked_pack_sizes(text):
         for match in pattern.finditer(text):
             sizes.add(int(match.group(1)))
     return sizes
+
+
+# ── set-line helpers ───────────────────────────────────────────────────────
+
+def _source_lines(text):
+    """Return (bodies, starts) for the lines of text.
+
+    bodies[i] is line i without its line break. starts[i] is the offset of that
+    line in text, so a match found in the whole text can be placed on its line
+    without a second scan. The breaks are the ones str.splitlines() uses.
+    """
+    bodies = []
+    starts = []
+    position = 0
+    for match in _LINE_BREAK.finditer(text):
+        bodies.append(text[position:match.start()])
+        starts.append(position)
+        position = match.end()
+    if position < len(text):
+        bodies.append(text[position:])
+        starts.append(position)
+    return bodies, starts
+
+
+def _set_block_window(has_set, index):
+    """Return the line indexes a set line on line index may correct from.
+
+    A block is a run of consecutive lines that each carry a set line: a
+    supplier writes one order's set lines together, and the item line follows
+    the block. The window is the block plus one line on each side.
+    """
+    first = index
+    while first - 1 >= 0 and has_set[first - 1]:
+        first -= 1
+    last = index
+    while last + 1 < len(has_set) and has_set[last + 1]:
+        last += 1
+    return range(max(0, first - 1), min(len(has_set) - 1, last + 1) + 1)
+
+
+def _set_blocks(has_set):
+    """Return the (first, last) line indexes of each block of set lines.
+
+    The blocks are returned in source order, so a block is resolved before the
+    block below it.
+    """
+    blocks = []
+    index = 0
+    while index < len(has_set):
+        if not has_set[index]:
+            index += 1
+            continue
+        first = index
+        while index + 1 < len(has_set) and has_set[index + 1]:
+            index += 1
+        blocks.append((first, index))
+        index += 1
+    return blocks
+
+
+def _line_facts(bodies):
+    """Return the per-line facts the set check needs, once per line.
+
+    Each line carries its id form and token boundaries, the pack sizes its pack
+    markers name, its content words, its links and its GTIN-14s. The check asks
+    these questions for every line and every item, so they are computed once per
+    line instead of once per question.
+    """
+    facts = []
+    for body in bodies:
+        flat, boundary = _source_id_index(body)
+        gtins14 = set()
+        for gtin in find_gtins(body):
+            form = gtin14(gtin)
+            if form is not None:
+                gtins14.add(form)
+        facts.append({
+            "flat": flat,
+            "boundary": boundary,
+            "packs": _marked_pack_sizes(body),
+            "words": _words(body),
+            "links": find_links(body),
+            "gtins14": gtins14,
+        })
+    return facts
+
+
+def _line_id_forms(fact, max_length):
+    """Return every id form the line holds on a token boundary.
+
+    A match must start and end on a token boundary, so a matchable form is a
+    run of the line's letters and digits, or several runs in a row. Only forms
+    no longer than the longest id in the mail are built, which bounds the work
+    on a line of many words.
+    """
+    flat = fact["flat"]
+    stops = [position for position, flag in enumerate(fact["boundary"]) if flag]
+    runs = [flat[stops[index]:stops[index + 1]]
+            for index in range(len(stops) - 1)]
+    forms = set()
+    for first in range(len(runs)):
+        text = runs[first]
+        if len(text) > max_length:
+            continue
+        forms.add(text)
+        for second in range(first + 1, len(runs)):
+            text += runs[second]
+            if len(text) > max_length:
+                break
+            forms.add(text)
+    return forms
+
+
+def _grounded_by_line(items, facts):
+    """Return, per line, the sorted item indexes that line grounds.
+
+    A line grounds an item when it holds the item's part number or GTIN on a
+    token boundary, when it holds the item's link (or a link with the item's
+    marketplace id), or when it shares MATCH_RATIO of the item's description
+    words. The description rule is what carries an item whose part number the
+    extractor did not read.
+
+    The lookup is inverted on purpose. A supplier line names one product, so a
+    line grounds a few items at most, while a mail holds many. The set check
+    then walks the few items a line grounds instead of every item in the mail
+    for every set line, which keeps a mail with a thousand positions linear
+    enough to run on untrusted text.
+    """
+    ids = {}
+    gtins = {}
+    links = {}
+    words_any = {}
+    words_check = {}
+    item_words = {}
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        for value in (item.get("part_number"), item.get("gtin")):
+            form = _gtin14_of_value(value)
+            if form is not None:
+                gtins.setdefault(form, set()).add(index)
+            flat = _id_form(value)
+            if len(flat) >= MIN_ID_LEN:
+                ids.setdefault(flat, set()).add(index)
+        link = item.get("link")
+        if isinstance(link, str) and link:
+            links.setdefault(link, set()).add(index)
+        for link_id in _as_list(item.get("other_ids")):
+            links.setdefault(("id", link_id), set()).add(index)
+        item_words[index] = _words(item.get("description"))
+        # A description of one or two content words matches on one shared word
+        # alone: overlap is shared/min(...) and one shared word of two is
+        # already MATCH_RATIO. Those items need no overlap sum, so the bucket
+        # itself is the answer. A longer description is summed per candidate.
+        bucket = words_any if len(item_words[index]) <= 2 else words_check
+        for word in item_words[index]:
+            bucket.setdefault(word, set()).add(index)
+    max_length = max([len(form) for form in ids] or [0])
+    grounded = []
+    for fact in facts:
+        found = set()
+        for form in _line_id_forms(fact, max_length):
+            found.update(ids.get(form, ()))
+        for form in fact["gtins14"]:
+            found.update(gtins.get(form, ()))
+        for url in fact["links"]:
+            found.update(links.get(url, ()))
+            link_id = product_link_id(url)
+            if link_id is not None:
+                found.update(links.get(("id", link_id), ()))
+        line_words = fact["words"]
+        for word in line_words:
+            found.update(words_any.get(word, ()))
+        for word in line_words:
+            for index in words_check.get(word, ()):
+                if _overlap(item_words[index], line_words) >= MATCH_RATIO:
+                    found.add(index)
+        grounded.append(sorted(found))
+    return grounded
