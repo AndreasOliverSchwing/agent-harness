@@ -11,6 +11,12 @@ check gets worse cannot also be a regression gate without hiding the number it
 exists to report. The one exception is the README consistency test, which
 asserts that the figures the docs quote are the figures the bench produces.
 
+Two tests guard the scorer itself (N4'): an assertion on `false_alarm` for an
+error case is False by construction, so each of them patches a deliberately
+broken `is_false_alarm` into the bench inside the test run and asserts that the
+assertion trips on it. A vacuous assertion fails those tests with
+"AssertionError not raised".
+
     python3 -m unittest discover -s tests -v
 """
 import copy
@@ -51,6 +57,23 @@ if _spec is None or _spec.loader is None:  # pragma: no cover - file is in repo
     raise ImportError("cannot load %s" % RUN_PATH)
 R = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(R)
+
+
+def with_broken_false_alarm(call):
+    """Run call with is_false_alarm replaced by a scorer that counts every finding.
+
+    N4': an assertion on false_alarm is worth writing only when a broken scorer
+    can trip it. is_false_alarm() is False for every case that is not a clean
+    control, so a plain assertion on an error case can never fail. Patching the
+    scorer in proves that the assertion is load-bearing, and the real scorer is
+    restored in the finally block whether the call passes or fails.
+    """
+    original = getattr(R, "is_false_alarm")
+    setattr(R, "is_false_alarm", lambda case, findings: bool(findings))
+    try:
+        return call()
+    finally:
+        setattr(R, "is_false_alarm", original)
 
 
 # One item, one GTIN in the source, the GTIN missing from the extraction.
@@ -100,10 +123,20 @@ class ScoreCaseTest(unittest.TestCase):
         self.assertTrue(result["caught"])
         self.assertTrue(result["corrected"])
         self.assertEqual(result["codes"], ["MISSING_GTIN"])
-        # No false_alarm assertion here (N4'): is_false_alarm() is False for
-        # every case that is not a clean control, so asserting it on an error
-        # case can never fail. The clean control below is where it means
-        # something.
+
+    def test_an_error_case_is_never_a_false_alarm(self):
+        # N4': an error case holds findings, so only the clean-control rule
+        # keeps it out of the false-alarm count. The assertion below must be
+        # able to fail: a scorer that counts every finding as an alarm trips
+        # it, and the real scorer passes it.
+        def check():
+            result = R.score_case(BROKEN)
+            self.assertTrue(result["codes"], "the error case raised no finding")
+            self.assertFalse(result["false_alarm"])
+
+        check()
+        with self.assertRaises(AssertionError):
+            with_broken_false_alarm(check)
 
     def test_a_sound_extraction_raises_no_finding(self):
         result = R.score_case(SOUND)
@@ -520,12 +553,25 @@ class GermanCasesTest(unittest.TestCase):
             self.assertIn(mark, text)
 
     def test_every_german_error_case_is_caught_on_its_own_item(self):
+        scored = []
         for case in self.cases:
             if case["error_type"] == "clean":
                 continue
             result = R.score_case(case)
             self.assertTrue(result["caught"], case["id"])
-            self.assertFalse(result["false_alarm"], case["id"])
+            scored.append(result)
+        # N4': false_alarm is False for every case that is not a clean control,
+        # so a per-case assertion on it can never fail. Assert the counter over
+        # the group instead, and prove that a broken scorer trips it.
+        self.assertEqual(R.total_false_alarms(scored), 0)
+
+        def check():
+            self.assertEqual(R.total_false_alarms(
+                [R.score_case(case) for case in self.cases
+                 if case["error_type"] != "clean"]), 0)
+
+        with self.assertRaises(AssertionError):
+            with_broken_false_alarm(check)
 
     def test_every_german_control_produces_no_finding(self):
         for case in self.cases:

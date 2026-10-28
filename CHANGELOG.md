@@ -416,6 +416,15 @@ below is one card of that round.
   `README.md`, `SPEC-REFERENCE.md`, the module docstring and the
   `_id_occurs_verbatim()`, `_holds_punctuation()`, `_item_part_forms()` and
   `_check_ids()` docstrings.
+- **The bench's false-alarm assertions can fail (3.9, N4′).** Two tests asserted
+  `false_alarm` on an error case, and `is_false_alarm()` is False for every case
+  that is not a clean control, so neither assertion could fail on the code it
+  guarded. Both now prove the assertion is load-bearing inside the test run: a
+  scorer that counts every finding as an alarm is patched into
+  `bench/grounding/run.py` in the test, the assertion must trip on it, and the
+  real scorer must pass. The German case asserts the group's
+  `total_false_alarms()` instead of a per-case field. Reverting either assertion
+  to the vacuous form fails the test with "AssertionError not raised".
 
 ### Fixed in the second review round
 
