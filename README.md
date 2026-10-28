@@ -328,6 +328,14 @@ name", not as a recall rate on real extractor output.
   not 2.8 s. 100 KB of either shape finishes
   in under a second. Timing tests in the suite hold those bounds, and each
   timing test is proven by reverting the guard it covers.
+  Two more scans are linear in the mail. The verbatim id rule is one compiled
+  pattern with a one-character lookbehind and lookahead, so the cost is one
+  pass of the regex engine and not one `str.find` per occurrence: 100 KB of one
+  letter beside 50 items of that letter took 2.2 s and takes 0.05 s. The
+  comparable form of an item's part number is built once per mail, not once per
+  source line: 100 KB with one GTIN per position and 200 items took 1.0 s and
+  takes 0.37 s. Each distinct id form is also asked once per mail, so 50 items
+  that repeat one id cost one scan.
 - **The set check does not use an id longer than 64 characters for line
   matching.** A part number of 65 characters or more is not a part number: it
   grounds nothing on a line, so a set line next to it corrects nothing.
@@ -352,7 +360,9 @@ name", not as a recall rate on real extractor output.
   designation therefore needs no joiner rule: `NYM-J 3x1,5`, `H07V-K 1x2,5`,
   `SPAX 4,5x40`, `M8×40` and `AC-4417(B)` are grounded when the source prints
   them. The boundary rule still applies: `NYM-J 3x1,5` is not grounded by
-  `NYM-J 3x1,55`.
+  `NYM-J 3x1,55`. This rule reads only an id that holds a character which is
+  not a letter or a digit. For an id of letters and digits alone the token rule
+  already gives the same answer, because the flat form is the id as printed.
 - **Only a joiner may sit inside a grounded id.** Any other punctuation ends the
   token, so `Pos. 3: AC-4417, 8 Stück` does not ground `AC-44178`, `AC-4417 | 8`
   does not ground `AC-4417-8`, and `Art.-Nr. 4417 (10 Stück)` does not ground

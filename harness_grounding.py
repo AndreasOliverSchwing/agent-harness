@@ -104,7 +104,9 @@ Codes and actions in this module:
     UNGROUNDED_ID / "flagged"    an item id does not occur in the source text
                                  on a token boundary. An id that occurs
                                  verbatim, whatever punctuation it holds, is
-                                 grounded. field is the key, old_value the id.
+                                 grounded; that second rule reads only an id
+                                 with a character that is not a letter or a
+                                 digit. field is the key, old_value the id.
                                  The item stays; uncertain is set True.
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
                                  extraction. A digit run counts as a GTIN only
@@ -752,6 +754,46 @@ def _is_id_char(char):
     return bool(char) and (char.isalnum() or char in _ID_JOINER_SET)
 
 
+# Compiled searches for _id_occurs_verbatim, keyed by the casefolded id. A mail
+# holds few ids and a 100 KB run of one letter holds tens of thousands of
+# occurrences of one, so the pattern is built once per id. The cache is bounded
+# because the ids come from untrusted input.
+_VERBATIM_SEARCHES = {}
+_VERBATIM_CACHE_MAX = 512
+
+
+def _holds_punctuation(value):
+    """True when an id holds a character that is not a letter or a digit.
+
+    Only such an id needs the verbatim rule. _id_form() drops every character
+    that is not a letter or a digit, so for an id of letters and digits alone
+    the flat form is the id as printed and the token rule already decides it.
+    Asking the second rule anyway cost one scan of the whole source for every
+    item: 50 items of a four-letter id beside a 100 KB run of that letter took
+    0.8 s.
+    """
+    if not isinstance(value, str):
+        value = str(value) if value is not None else ""
+    return any(not char.isalnum() for char in value)
+
+
+def _verbatim_search(needle):
+    """Return a compiled search for needle with an id-char boundary at both ends.
+
+    "[^\\W_]" is exactly str.isalnum(): every letter and digit of Unicode and no
+    underscore. The joiner class is the documented joiner set, so the boundary
+    is the one _is_id_char() states.
+    """
+    search = _VERBATIM_SEARCHES.get(needle)
+    if search is None:
+        joiners = "".join(re.escape(char) for char in sorted(_ID_JOINER_SET))
+        search = re.compile("(?<![^\\W_])(?<![%s])%s(?![^\\W_])(?![%s])"
+                            % (joiners, re.escape(needle), joiners))
+        if len(_VERBATIM_SEARCHES) < _VERBATIM_CACHE_MAX:
+            _VERBATIM_SEARCHES[needle] = search
+    return search
+
+
 def _id_occurs_verbatim(value, folded_source):
     """True when value's own text occurs in folded_source on a token boundary.
 
@@ -768,24 +810,19 @@ def _id_occurs_verbatim(value, folded_source):
     "AC-44178" is not grounded by "Pos. 3: AC-4417, 8 St\u00fcck", because that
     text is not there at all.
 
-    folded_source is the source text casefolded once by the caller, so the cost
-    is one str.find per occurrence, linear in the length of the source.
+    folded_source is the source text casefolded once by the caller. The search
+    is one compiled pattern with a one-character lookbehind and lookahead, so
+    the cost is one pass of the regex engine over the source, whatever the
+    number of occurrences. Walking the occurrences with str.find() was
+    quadratic in a long run of id characters: a 100 KB run of one letter beside
+    50 items of that letter took 2.2 s.
     """
     if not isinstance(value, str):
         value = str(value) if value is not None else ""
     needle = value.casefold()
     if not needle:
         return False
-    size = len(needle)
-    start = folded_source.find(needle)
-    while start != -1:
-        end = start + size
-        before = folded_source[start - 1] if start else ""
-        after = folded_source[end] if end < len(folded_source) else ""
-        if not _is_id_char(before) and not _is_id_char(after):
-            return True
-        start = folded_source.find(needle, start + 1)
-    return False
+    return _verbatim_search(needle).search(folded_source) is not None
 
 
 def find_links(text):
@@ -979,6 +1016,9 @@ def _check_ids(items, origins, source_text):
     An id that occurs verbatim is grounded too, whatever punctuation it holds:
     "NYM-J 3x1,5", "SPAX 4,5x40" and "AC-4417(B)" are what a German supplier
     prints, and the token rule alone flagged them. See _id_occurs_verbatim.
+    That rule reads only an id with a character that is not a letter or a
+    digit: for an id of letters and digits alone the flat form is the id as
+    printed, so the token rule above already answers it.
     """
     findings = []
     flat_source, boundary, hard, glue = _source_id_index(source_text)
@@ -988,6 +1028,11 @@ def _check_ids(items, origins, source_text):
         form = gtin14(gtin)
         if form is not None:
             source_gtins14.add(form)
+    # Two items often carry the same id: a variant line repeats the part
+    # number, and a hostile mail repeats one four-letter id fifty times. The
+    # answer is the same for every repetition, and the scan it saves is the
+    # source's own length, so each distinct form is asked once.
+    grounded_forms = {}
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -1000,10 +1045,16 @@ def _check_ids(items, origins, source_text):
                 if form is not None and form in source_gtins14:
                     continue
             flat = _id_form(raw)
-            if len(flat) < MIN_ID_LEN or _id_occurs(
-                    flat, flat_source, boundary, hard, glue):
+            if len(flat) < MIN_ID_LEN:
                 continue
-            if _id_occurs_verbatim(raw, folded_source):
+            grounded = grounded_forms.get(flat)
+            if grounded is None:
+                grounded = _id_occurs(flat, flat_source, boundary, hard, glue)
+                grounded_forms[flat] = grounded
+            if grounded:
+                continue
+            if _holds_punctuation(raw) and _id_occurs_verbatim(
+                    raw, folded_source):
                 continue
             item["uncertain"] = True
             findings.append(_finding(
@@ -1823,8 +1874,9 @@ def _check_missing_gtins(items, origins, source_text, apply):
     quotes = {}
     attached = set()
     owner_cache = {}
+    part_forms = _item_part_forms(items, origins)
     named_above, named_below, layout = _bare_gtin_layout(
-        candidates, items, origins, lines, facts, item_words)
+        candidates, items, origins, lines, facts, item_words, part_forms)
     for gtin, line_index, bare in candidates:
         form = gtin14(gtin)
         if form in carried:
@@ -1852,7 +1904,8 @@ def _check_missing_gtins(items, origins, source_text, apply):
             index, note = owners[key]
         else:
             index, note = _gtin_owner(items, origins, neighbour or line,
-                                      facts, item_words, lines, owner_cache)
+                                      facts, item_words, lines, owner_cache,
+                                      part_forms)
             owners[key] = (index, note)
         if index is not None and index in attached:
             note = ("the line names item %d, which already %s a GTIN from the "
@@ -1974,7 +2027,8 @@ def _line_tokens(facts, text):
     return cached
 
 
-def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words):
+def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words,
+                      part_forms=None):
     """Return (names_above, names_below, layout) for the bare GTIN lines.
 
     names_above and names_below map the index of a bare GTIN line to whether the
@@ -2001,12 +2055,12 @@ def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words):
         if line_index not in names_above:
             above = lines[line_index - 1].strip() if line_index else ""
             names_above[line_index] = bool(above) and _names_an_item(
-                items, origins, above, facts, item_words)
+                items, origins, above, facts, item_words, part_forms)
         if line_index not in names_below:
             below = (lines[line_index + 1].strip()
                      if line_index + 1 < len(lines) else "")
             names_below[line_index] = bool(below) and _names_an_item(
-                items, origins, below, facts, item_words)
+                items, origins, below, facts, item_words, part_forms)
     directions = set()
     for line_index, above in names_above.items():
         below = names_below[line_index]
@@ -2019,7 +2073,8 @@ def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words):
     return names_above, names_below, None
 
 
-def _gtin_owner(items, origins, match_line, facts, item_words, lines, cache):
+def _gtin_owner(items, origins, match_line, facts, item_words, lines, cache,
+                part_forms=None):
     """Return (index, note) for the item a GTIN line names, or (None, note).
 
     The part number on the line decides, on a token boundary. It is the one
@@ -2054,7 +2109,8 @@ def _gtin_owner(items, origins, match_line, facts, item_words, lines, cache):
     of thousands of GTINs is tokenised once, not once per number.
     """
     flat, boundary, hard, glue, line_words = _line_tokens(facts, match_line)
-    by_part = _items_by_part(items, origins, flat, boundary, hard, glue)
+    by_part = _items_by_part(items, origins, flat, boundary, hard, glue,
+                             part_forms)
     by_words = _items_by_words(items, origins, item_words, line_words)
     if len(by_part) == 1:
         if len(by_words) == 1 and by_words[0] != by_part[0]:
@@ -2111,18 +2167,29 @@ def _ids_printed_on_a_line(items, origins, lines, facts, cache):
     return printed
 
 
-def _items_by_part(items, origins, flat, boundary, hard, glue):
-    """Return the items whose part number the line holds on a token boundary."""
-    found = []
+def _item_part_forms(items, origins):
+    """Return [(index, form)] for every item whose part number can match a line.
+
+    Built once per check. _id_form() over every item for every source line is
+    what made a 100 KB mail of one GTIN per position cost a second: 200 items
+    over 3,847 lines is 770,000 calls for the same 200 values.
+    """
+    forms = []
     for index, item in enumerate(items):
         if not isinstance(item, dict) or origins[index] is None:
             continue
         form = _id_form(item.get("part_number"))
-        if len(form) < MIN_ID_LEN:
-            continue
-        if _id_occurs(form, flat, boundary, hard, glue):
-            found.append(index)
-    return found
+        if len(form) >= MIN_ID_LEN:
+            forms.append((index, form))
+    return forms
+
+
+def _items_by_part(items, origins, flat, boundary, hard, glue, part_forms=None):
+    """Return the items whose part number the line holds on a token boundary."""
+    if part_forms is None:
+        part_forms = _item_part_forms(items, origins)
+    return [index for index, form in part_forms
+            if _id_occurs(form, flat, boundary, hard, glue)]
 
 
 def _items_by_words(items, origins, item_words, line_words):
@@ -2132,7 +2199,7 @@ def _items_by_words(items, origins, item_words, line_words):
             and _overlap(item_words[index], line_words) >= MATCH_RATIO]
 
 
-def _names_an_item(items, origins, text, facts, item_words):
+def _names_an_item(items, origins, text, facts, item_words, part_forms=None):
     """True when text names at least one item of the extraction.
 
     A line names an item when it holds the item's part number on a token
@@ -2142,7 +2209,7 @@ def _names_an_item(items, origins, text, facts, item_words):
     by the line above (S9').
     """
     flat, boundary, hard, glue, line_words = _line_tokens(facts, text)
-    if _items_by_part(items, origins, flat, boundary, hard, glue):
+    if _items_by_part(items, origins, flat, boundary, hard, glue, part_forms):
         return True
     return bool(_items_by_words(items, origins, item_words, line_words))
 

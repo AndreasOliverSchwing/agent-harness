@@ -316,6 +316,11 @@ no joiner rule can absorb, and each is grounded when the source prints it. The
 boundary rule still holds: `NYM-J 3x1,5` is not grounded by `NYM-J 3x1,55`,
 because the character after the match is a digit.
 
+This second rule reads only an id that holds a character which is not a letter
+or a digit. For an id of letters and digits alone the flat form is the id as
+printed, so the token rule above already gives the same answer, and the second
+scan is not made.
+
 Only a joiner may sit INSIDE an id that is compared in its flat form. Any other
 punctuation ends the token, so a match that runs through `,` `|` `(` `)` `;` or
 `:` grounds nothing:
@@ -456,6 +461,11 @@ Two conditions must hold, and both must hold on one line:
    length cannot match, so building it is wasted work: on a 100 KB line of
    one-letter tokens beside a 64-character part number the old scan held
    millions of forms, 1.86 s and 568 MB. The scan now takes 0.09 s and 19 MB.
+   The comparable form of an item's part number is built once per mail, not once
+   per source line: one GTIN per position with 200 items took 1.0 s on 100 KB
+   and takes 0.37 s. The verbatim id rule is one compiled pattern, so its cost is
+   one pass of the regex engine and not one `str.find` per occurrence: 100 KB of
+   one letter beside 50 items of that letter took 2.2 s and takes 0.05 s.
 2. **A pack marker that names the same pack size sits on the set line or on the
    owner line.** The marker must sit on one of those two lines, not anywhere in
    the mail.
