@@ -51,6 +51,7 @@ supplier and an invented phone number.
 """
 import os
 import random
+import string
 import sys
 import time
 import tracemalloc
@@ -450,7 +451,7 @@ class FindLinksCostTest(unittest.TestCase):
     @staticmethod
     def _links(size):
         """Return the probe's links: base-36 hosts, one per link, until size."""
-        alphabet = "01234567" "89abcdefghijklmnopqrstuvwxyz"
+        alphabet = string.digits + string.ascii_lowercase
         parts = []
         total = 0
         index = 0
@@ -566,7 +567,7 @@ class LinksBlowupCostTest(unittest.TestCase):
         random.seed(7)
         lines = []
         for length in range(1, self.LINKS + 1):
-            digits = "".join(random.choice("01234567" "89")
+            digits = "".join(random.choice(string.digits)
                              for _ in range(length))
             lines.append("https://www.ebay.de/itm/%s" % digits)
         return "\n".join(lines)
