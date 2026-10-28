@@ -367,6 +367,20 @@ below is one card of that round.
   with NFKC before it reads the words, so `Proﬁlzylinder 30/30 mm` matches in
   both modes. Documented in the `_words()` docstring.
 
+- **The QA replays and the first review's probes are permanent tests (3.7).**
+  The 31 QA probes and the 31 probes of the first review lived in scripts outside
+  the repo, so a probe that passed once could regress with nothing to catch it.
+  They are now `tests/test_regression_qa.py` and
+  `tests/test_regression_review1.py`: 63 test methods, one per probe, except the
+  S11 probe that asserts two layouts, which is two methods so the passing layout
+  stays a live guard. A probe that expects a written value runs with
+  `apply=True` and also asserts the default mode's `suggested` finding, because
+  card 3.1 moved those writes behind the flag. Three probes stay open and carry
+  `@unittest.expectedFailure`: S11 for two links on one line, N1 and N3. Each
+  asserts the reviewer's expected result, not today's output, so it passes when
+  the item is fixed. The QA 5 probe is ported with a 5,000-digit value built by
+  arithmetic, because the script's `int("9" * 5000)` raises on Python 3.11+.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
