@@ -42,6 +42,13 @@ with it. Every one of them is run and green in this suite:
        .test_a_long_line_of_one_letter_tokens_is_cheap
   N6'  GroundMissingGtinTest.test_a_ligature_in_the_source_matches_the_description
 
+Card 3.9b adds one input of its own, for the second branch of the guard that N4'
+proved: `SecondReviewInputTest`
+`.test_a_shared_word_does_not_reach_an_item_whose_id_is_printed`. That branch is
+`if index in id_grounded: continue` on the `words_check` bucket, for a
+description of three or more content words, and the test fails when the branch
+is deleted.
+
 Every fixture is invented: made-up part numbers, made-up marketplace ids and
 GTINs on the GS1 prefix 2, which is reserved for internal use. The realistic
 mail is synthetic German supplier mail with an invented customer, an invented
@@ -136,6 +143,56 @@ class SecondReviewInputTest(unittest.TestCase):
                 self.assertEqual(checked["items"][0]["quantity"], 3)
                 self.assertEqual(checked["items"][1]["quantity"], 6)
                 self.assertEqual(checked["items"][1]["unit"], "pack")
+
+    def test_a_shared_word_does_not_reach_an_item_whose_id_is_printed(self):
+        # The second branch of the same guard in _grounded_by_line(): the
+        # words_check bucket, which holds the descriptions of three or more
+        # content words. Both descriptions here hold three ("Kabelbinder",
+        # "schwarz" or "wei\u00df", "best\u00e4ndig"), so neither item is read from
+        # the words_any bucket, and only this branch can keep the two lines
+        # apart. AC-44170's id is printed on line 3, so it is in id_grounded.
+        # Line 1 shares two of AC-44170's three words, which is 2/3 and above
+        # MATCH_RATIO: without the branch line 1 grounds both items and the set
+        # line rewrites AC-44170's correct 6 to 3 sets.
+        extraction = {"items": [
+            {"part_number": "NW-22010",
+             "description": "Kabelbinder schwarz UV-best\u00e4ndig 2er-Pack",
+             "quantity": 6, "unit": "piece"},
+            {"part_number": "AC-44170",
+             "description": "Kabelbinder wei\u00df UV-best\u00e4ndig 2er-Pack",
+             "quantity": 6, "unit": "piece"},
+        ]}
+        source = ("Kabelbinder schwarz UV-best\u00e4ndig 2er-Pack\n"
+                  "Menge: 3 x 2\n"
+                  "AC-44170 Kabelbinder wei\u00df UV-best\u00e4ndig, 6 Packungen "
+                  "\u00e0 2er-Pack\n")
+        # The default suggests only: NW-22010's 6 pieces would be 3 sets, and
+        # AC-44170 gets no finding at all. NW-22010's part number is not in the
+        # source, so its UNGROUNDED_ID stands above the suggestion.
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual(_codes(findings), ["UNGROUNDED_ID", "SET_MULTIPLIED"])
+        suggestion = findings[1]
+        self.assertEqual(suggestion["action"], "suggested")
+        self.assertEqual(suggestion["item_index"], 0)
+        self.assertEqual(suggestion["old_value"], 6)
+        self.assertEqual(suggestion["new_value"], 3)
+        self.assertEqual([finding["item_index"] for finding in findings], [0, 0],
+                         "AC-44170 must get no finding")
+        self.assertEqual([item["quantity"] for item in checked["items"]], [6, 6])
+        self.assertEqual([item["unit"] for item in checked["items"]],
+                         ["piece", "piece"])
+
+        # apply=True writes the one correction and leaves AC-44170 alone.
+        checked, findings = G.ground(extraction, source, apply=True)
+        self.assertEqual(_codes(findings), ["UNGROUNDED_ID", "SET_MULTIPLIED"])
+        correction = findings[1]
+        self.assertEqual(correction["action"], "corrected")
+        self.assertEqual(correction["item_index"], 0)
+        self.assertEqual([finding["item_index"] for finding in findings], [0, 0],
+                         "AC-44170 must get no finding")
+        self.assertEqual([item["quantity"] for item in checked["items"]], [3, 6])
+        self.assertEqual([item["unit"] for item in checked["items"]],
+                         ["set", "piece"])
 
     def test_a_form_does_not_run_through_punctuation_that_is_not_a_joiner(self):
         # The hard rule of _line_id_forms. The flat text of

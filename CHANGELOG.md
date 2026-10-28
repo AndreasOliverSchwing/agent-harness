@@ -174,7 +174,7 @@ Every item of the round, with the commit that fixed it, in the report's order:
 - N1′ — `493e0da` the note finding names the note the survivor held
 - N2′ — `08c3ac2` every quoted value in an evidence is capped
 - N3′ — `7ecd112` a placeholder on the owner line takes no set correction
-- N4′ — `b60f2c4` and `5718757` tests that can fail, and guards mutation-checked
+- N4′ — `b60f2c4` and `5718757` tests that can fail, and guards mutation-checked; the second branch of the guard is covered by the 3.9b follow-up below
 - N5′ — `18bbab7` the line-form scan yields a form instead of holding a set
 - N6′ — `9508b8d` a PDF ligature in a description matches
 
@@ -489,6 +489,22 @@ this round.
   `bash scripts/scan-secrets.sh --path` is clean on every file changed since
   `c480471`. A full-repo scan still sees `4d3b143` in the history check until
   the release step rewrites history.
+
+- **The `words_check` branch of the `id_grounded` guard has a test that fails
+  without it (3.9b, N4′ follow-up).** Card 3.9 covered the `words_any` branch,
+  for a description of one or two content words. The second branch, `if index in
+  id_grounded: continue` in the `words_check` loop, had no test: deleting it in a
+  scratch copy of `5718757` left the suite green.
+  `tests/test_regression_review2.py`
+  `SecondReviewInputTest.test_a_shared_word_does_not_reach_an_item_whose_id_is_printed`
+  holds the card's input. NW-22010 is grounded by description only, AC-44170 by
+  the id on its own line, and line 1 shares two of AC-44170's three description
+  words, which is 2/3 and above `MATCH_RATIO`. Without the branch line 1 grounds
+  both items and the set line rewrites AC-44170's correct 6 to 3 sets. The
+  default suggests 3 for NW-22010 alone and gives AC-44170 no finding;
+  `apply=True` gives `[3, 6]`. With the branch deleted in a scratch copy the
+  test fails (three findings, and `apply=True` gives `[3, 3]`) and it is the
+  only failure in 416 tests; it passes on this branch.
 
 The bench numbers did not change in round 3. `python3 bench/grounding/run.py`
 regenerates `bench/grounding/RESULTS.md` byte for byte, so there is no bench
