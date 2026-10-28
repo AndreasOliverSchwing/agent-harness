@@ -138,12 +138,17 @@ class SecondReviewInputTest(unittest.TestCase):
 
     def test_a_form_does_not_run_through_punctuation_that_is_not_a_joiner(self):
         # The hard rule of _line_id_forms. The flat text of
-        # "Pos. 1: AC-4417, 8 St\u00fcck" holds "AC44178", so without the rule the
-        # line would ground the item "AC-44178" and the set line below it would
-        # rewrite that item's correct 8 to 4 sets.
+        # "Pos. 1: AC-4417, 8 St\u00fcck 2er-Pack" holds "AC44178", so without the
+        # rule the line would ground the item "AC-44178" and the set line below
+        # it would rewrite that item's correct 8 to 4 sets.
+        #
+        # The owner line carries the pack marker, and it has to: a set line
+        # corrects only an item whose line names the pack size, so without the
+        # marker this test would pass with the hard rule deleted (N4'). The
+        # control below writes the same id contiguously and the set line acts.
         extraction = {"items": [{"part_number": "AC-44178", "quantity": 8,
                                  "unit": "piece"}]}
-        source = ("Pos. 1: AC-4417, 8 St\u00fcck\n"
+        source = ("Pos. 1: AC-4417, 8 St\u00fcck 2er-Pack\n"
                   "Menge: 4 x 2\n")
         for apply in (False, True):
             with self.subTest(apply=apply):
@@ -152,6 +157,14 @@ class SecondReviewInputTest(unittest.TestCase):
                                  "apply=%s" % apply)
                 self.assertEqual(checked["items"][0]["quantity"], 8)
                 self.assertEqual(checked["items"][0]["unit"], "piece")
+
+        contiguous = source.replace("AC-4417, 8", "AC-44178, 8")
+        checked, findings = G.ground(extraction, contiguous)
+        self.assertEqual(_codes(findings), ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 8)
+        checked, findings = G.ground(extraction, contiguous, apply=True)
+        self.assertEqual(_codes(findings), ["SET_MULTIPLIED"])
+        self.assertEqual(checked["items"][0]["quantity"], 4)
 
     def test_a_cut_link_is_restored_when_the_suffix_ends_a_sentence(self):
         # The suffix rstrip of the redacted-link restore. The extractor kept the

@@ -426,6 +426,22 @@ below is one card of that round.
   `total_false_alarms()` instead of a per-case field. Reverting either assertion
   to the vacuous form fails the test with "AssertionError not raised".
 
+- **The `id_grounded` guard has a test that fails without it (3.9, N4′).** Card
+  3.8 already added it (`test_a_shared_pack_word_does_not_own_another_products_line`)
+  with the review's input, minus the part number on the owner line: the S3′ rule
+  of card 3.5 now covers the reviewer's line as printed, so the guard needs a
+  line that names its product by description only. Deleting both guard lines
+  fails that test in both modes; it passes on this branch. No new test was
+  added.
+- **The hard-rule test of `_line_id_forms` now fails when the rule is deleted
+  (3.9, N4′).** `test_a_form_does_not_run_through_punctuation_that_is_not_a_joiner`
+  passed with the `end > limit` check removed, because a set line corrects only
+  an item whose line names the pack size and its owner line carried no pack
+  marker. The line now ends in `2er-Pack`, so deleting the rule rewrites the
+  item's 8 to 4, and a control writes the same id contiguously to show the set
+  line still acts. The suffix `rstrip` test of card 3.8 already fails when the
+  `rstrip` is deleted; that was verified and left unchanged.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
