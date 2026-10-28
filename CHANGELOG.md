@@ -353,6 +353,13 @@ below is one card of that round.
   `_check_variant_split()`, `_merge_blocking_value()` and `_carries_data()`
   docstrings.
 
+- **The note finding names the note the survivor held (N1′).** A merge reports
+  the note it writes with `old_value` `None`, even when the survivor already
+  held a note such as "Lieferung KW 45", although the finding contract says
+  `old_value` is what the key held before the module touched it. The note
+  finding now carries the survivor's note in `old_value`, and `None` when it
+  held none. Documented in `SPEC-REFERENCE.md` and the module docstring.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on

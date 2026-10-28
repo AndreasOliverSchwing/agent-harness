@@ -165,8 +165,9 @@ Codes and actions in this module:
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
                                  One finding per field written onto the
-                                 survivor: "note" (new_value the note added,
-                                 with the merged line's own note appended),
+                                 survivor: "note" (old_value the note the
+                                 survivor held, new_value the note added, with
+                                 the merged line's own note appended),
                                  "link", "gtin" and "other_ids" (one finding
                                  per entry added). Every one of them has
                                  input_index of the merged line. A value both
@@ -1487,7 +1488,8 @@ def _check_variant_split(items, origins):
         first["note"] = ("%s · %s" % (note, piece)) if note else piece
         first["uncertain"] = True
         writes, conflicts = _merge_variant_values(first, variant)
-        merges.append((first, writes, conflicts, piece, input_of[index], index))
+        merges.append((first, writes, conflicts, piece, input_of[index], index,
+                       note))
 
     removed = set(entry[5] for entry in merges)
     kept = [index for index in range(len(items)) if index not in removed]
@@ -1498,7 +1500,7 @@ def _check_variant_split(items, origins):
     origins[:] = [input_of[index] for index in kept]
 
     findings = []
-    for first, writes, conflicts, piece, variant_input, _index in merges:
+    for first, writes, conflicts, piece, variant_input, _index, old_note in merges:
         position = position_of[id(first)]
         number = normalize_id(first.get("part_number"))
         findings.append(_finding(
@@ -1507,6 +1509,7 @@ def _check_variant_split(items, origins):
                      "quantity of its own, so it is folded into item %d"
                      % (number, position),
             field="note",
+            old_value=old_note,
             new_value=piece,
             item_index=position,
             input_index=variant_input))

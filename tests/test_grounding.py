@@ -3086,6 +3086,33 @@ class VariantMergeLossTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["colour"], "silber")
         self.assertEqual([f["action"] for f in findings], ["merged"])
 
+    def test_the_note_finding_names_the_note_the_survivor_held(self):
+        # N1' of the second review. The contract says old_value is what the key
+        # held before this module touched it. The note finding always reported
+        # None, even when the survivor already held a note.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4,
+             "note": "Lieferung KW 45"},
+            {"part_number": "AC-44170", "description": "Schraube M8 silber"},
+        ]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        note = [f for f in findings if f["field"] == "note"]
+        self.assertEqual(len(note), 1)
+        self.assertEqual(note[0]["old_value"], "Lieferung KW 45")
+        self.assertEqual(note[0]["new_value"], "variant: Schraube M8 silber")
+        self.assertEqual(checked["items"][0]["note"],
+                         "Lieferung KW 45 · variant: Schraube M8 silber")
+
+    def test_the_note_finding_has_no_old_value_when_the_survivor_had_no_note(self):
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "AC-44170", "description": "Schraube M8 silber"},
+        ]}
+        _checked, findings = G.ground(extraction, self.SOURCE)
+        note = [f for f in findings if f["field"] == "note"]
+        self.assertEqual(len(note), 1)
+        self.assertIsNone(note[0]["old_value"])
+
     def test_a_variant_with_no_unmergeable_value_is_still_merged(self):
         # The guard must not stop the ordinary merge: a description is the
         # variant's label and a note is folded into the survivor's note.

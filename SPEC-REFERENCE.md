@@ -507,7 +507,9 @@ A merge writes four fields at most, and it reports each one it writes with its
 own finding: `note`, `link`, `gtin` and `other_ids`. Each finding has
 `item_index` of the survivor and `input_index` of the merged line, so a reader
 can tell where the value came from. `other_ids` gets one finding per entry
-added, and `new_value` is that entry.
+added, and `new_value` is that entry. The `note` finding's `old_value` is the
+note the survivor held before the merge, and `None` when it held none; its
+`new_value` is the text the merge added.
 
 Nothing a merge touches is dropped:
 
