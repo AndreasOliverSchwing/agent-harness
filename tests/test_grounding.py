@@ -3472,6 +3472,54 @@ class ChangelogFixRoundTwoTest(unittest.TestCase):
                          % ", ".join(missing))
 
 
+class ChangelogFixRoundThreeTest(unittest.TestCase):
+    """Every item of fix round 3 has one line and a commit or an open reason.
+
+    The round has 20 items, written with a prime to keep them apart from the
+    round-2 codes. A reader of the changelog must be able to find, for each one,
+    the commit that fixed it, or the reason it is still open.
+    """
+
+    # (item code, one phrase the line's text must hold)
+    ITEMS = (
+        ("B1′", "marketplace id"),
+        ("B2′", "date"),
+        ("S1′", "stack of set lines"),
+        ("S2′", "unreadable quantity"),
+        ("S3′", "grounds no other by description"),
+        ("S4′", "query string"),
+        ("S5′", "claims the line below"),
+        ("S6′", "source's unit"),
+        ("S7′", "verbatim"),
+        ("S8′", "labels are read after a space"),
+        ("S9′", "bare GTIN line"),
+        ("S10′", "printed elsewhere"),
+        ("S11′", "merge never loses data"),
+        ("S12′", "evidence starts with the GTIN"),
+        ("N1′", "note the survivor held"),
+        ("N2′", "quoted value"),
+        ("N3′", "placeholder on the owner line"),
+        ("N4′", "tests that can fail"),
+        ("N5′", "line-form scan"),
+        ("N6′", "ligature"),
+    )
+
+    def test_every_item_has_one_line_with_a_commit_or_an_open_reason(self):
+        with open(os.path.join(REPO, "CHANGELOG.md"), encoding="utf-8") as handle:
+            lines = handle.read().split("\n")
+        for code, phrase in self.ITEMS:
+            starts = [line for line in lines
+                      if line.startswith("- %s — " % code)]
+            self.assertEqual(len(starts), 1,
+                             "%s needs exactly one index line" % code)
+            line = starts[0]
+            self.assertIn(phrase, line, "%s: %s" % (code, line))
+            has_commit = re.search(r"`[0-9a-f]{7}`", line) is not None
+            has_open = "open — " in line
+            self.assertTrue(has_commit or has_open,
+                            "%s names no commit and no open reason" % code)
+
+
 class PublicGtinTest(unittest.TestCase):
     """Every GTIN a published file shows is an invented prefix-2 number.
 

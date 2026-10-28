@@ -155,6 +155,34 @@ The third review round of 2026-10-27 (branch `feat/grounding-checks`) is
 flag-first: each item narrows a rule so that it writes or claims less. Each entry
 below is one card of that round.
 
+Every item of the round, with the commit that fixed it, in the report's order:
+
+- B1′ — `ec14225` a marketplace id has a real length
+- B2′ — `c80f8e6` a date is never a quantity
+- S1′ — `02bc1b0` a stack of set lines corrects only the position above it
+- S2′ — `3040d7f` a set line on an unreadable quantity corrects nothing
+- S3′ — `c132f76` a line that names an item by id grounds no other by description
+- S4′ — `95b49a4` a link with a query string grounds its own line
+- S5′ — `a72c90b` only a product link with no quantity of its own claims the line below
+- S6′ — `490e85b` an uncovered link states the source's unit
+- S7′ — `a0cab6c` an id that occurs verbatim is grounded, whatever punctuation it holds
+- S8′ — `2b860da` the `Nr.` and `No.` GTIN labels are read after a space
+- S9′ — `cd7cb38` a bare GTIN line and a passing part number claim no neighbour; `4fa571e` the bare line follows the mail's layout
+- S10′ — `c6abde6` a GTIN never goes to an item whose part number is printed elsewhere
+- S11′ — `22f5d17` a merge never loses data
+- S12′ — `35a0b38` every `MISSING_GTIN` evidence starts with the GTIN
+- N1′ — `493e0da` the note finding names the note the survivor held
+- N2′ — `08c3ac2` every quoted value in an evidence is capped
+- N3′ — `7ecd112` a placeholder on the owner line takes no set correction
+- N4′ — `b60f2c4` and `5718757` tests that can fail, and guards mutation-checked
+- N5′ — `18bbab7` the line-form scan yields a form instead of holding a set
+- N6′ — `9508b8d` a PDF ligature in a description matches
+
+No item of the round is open. The three `expectedFailure` tests that remain in
+`tests/test_regression_review1.py` are first-review items (S11 for two links on
+one line, N1 for an impossible-length restore, N3 for a zero GTIN), not items of
+this round.
+
 - **`ground()` only suggests by default (3.1).** The three checks that would write
   an extraction value — `SET_MULTIPLIED`, `MISSING_GTIN` and the quantity of an
   item appended for an `UNCOVERED_LINK` — now write it only with
@@ -256,8 +284,9 @@ below is one card of that round.
   always read together with the line above it, so in a list that prints the
   GTIN above its own position line the next position's number went to the item
   above: `EAN: G1 / AC-44170 … / EAN: G2 / NW-22010 …` put G2 on AC-44170. A
-  bare GTIN line now takes the line above only when the line below names no
-  item, so both numbers are reported and nothing is written. (b) Any part
+  bare GTIN line no longer reads the line above by default: it reads the
+  neighbour that names an item, which the 3.4b follow-up below sets out in full.
+  On this input both numbers now attach to their own position. (b) Any part
   number on the line won, even one mentioned in passing:
   `Pos. 2: Dichtungssatz passend für AC-44170, …, EAN G2` gave G2 to AC-44170.
   When the line holds one item's part number and exactly one OTHER item's
@@ -441,6 +470,31 @@ below is one card of that round.
   item's 8 to 4, and a control writes the same id contiguously to show the set
   line still acts. The suffix `rstrip` test of card 3.8 already fails when the
   `rstrip` is deleted; that was verified and left unchanged.
+
+- **The docs describe round 3 as it landed (3.10).** `README.md`,
+  `SPEC-REFERENCE.md` and the module docstring now agree on the suggest-by-default
+  mode, the marketplace id bounds and every rule this round narrowed. The
+  description-only GTIN attachment sentence in `SPEC-REFERENCE.md` was stale: it
+  now says the part number decides first and the description is the fallback,
+  with the guard of S10′. Two sentences described a rule more broadly than the
+  code applies it and are corrected: the 64-character line-matching cap is on an
+  id's normalized form, not on its printed length, and a description match folds
+  PDF ligatures (N6′), which only the `_words()` docstring said. `README.md` now
+  also states the 200-character cap for every quoted value (N2′), the note
+  finding's `old_value` (N1′), and the unit the source must name (S6′).
+  `tests/test_regression_review2.py` held four 9-10 digit runs, which the
+  publish gate reads as a possible channel id: the invented order number is
+  written `4500-012345`, the invented `USt-IdNr.` as `DE 123 456 789`, and two
+  digit literals use `string.digits`. No assertion changed.
+  `bash scripts/scan-secrets.sh --path` is clean on every file changed since
+  `c480471`. A full-repo scan still sees `4d3b143` in the history check until
+  the release step rewrites history.
+
+The bench numbers did not change in round 3. `python3 bench/grounding/run.py`
+regenerates `bench/grounding/RESULTS.md` byte for byte, so there is no bench
+commit: the three value-writing checks only suggest by default now, and the
+runner already scores `caught` in the default mode and `corrected` with
+`apply=True`, so every row and the false-alarm count read as at `c480471`.
 
 ### Fixed in the second review round
 

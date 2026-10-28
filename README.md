@@ -215,6 +215,9 @@ and the new one for others. Read `old_value` and `new_value`.
 writes anything. A `reported` finding names the value it is about in `evidence`.
 Every `MISSING_GTIN` evidence starts with `GTIN <number>: `, so the
 200-character quote cut can never drop the number the finding is about.
+Every value a finding quotes is cut that way, the set line of a `SET_MULTIPLIED`
+finding and both links of a `REDACTED_LINK` finding too, so one finding never
+costs the length of the line it quotes.
 A `VARIANT_SPLIT` conflict is the same: the survivor keeps its own value, so
 nothing is written and `new_value` is `None`. The variant's value is in
 `old_value` and the survivor's value is named in `evidence`.
@@ -252,9 +255,11 @@ loses data, and it never writes without a finding. It reports one `merged`
 finding per field it writes onto the survivor: `note`, `link`, `gtin` and
 `other_ids` (one finding per entry added). Each of those findings has
 `item_index` of the survivor and `input_index` of the merged line, so the record
-says where the value came from. When both lines carry a different value for one
-key, the survivor keeps its own, nothing is written, and the other value is named
-in the finding (`old_value`) with `new_value: null` and `uncertain: true`.
+says where the value came from. The `note` finding's `old_value` is the note the
+survivor held before the merge, and `null` when it held none. When both lines
+carry a different value for one key, the survivor keeps its own, nothing is
+written, and the other value is named in the finding (`old_value`) with
+`new_value: null` and `uncertain: true`.
 A `unit` or a `price` is never written; a value that differs is reported the same
 way. Variant notes read in the order the source lists them, and the merged line's
 own note is appended as `variant: <label> (<note>)`.
@@ -336,13 +341,16 @@ name", not as a recall rate on real extractor output.
   source line: 100 KB with one GTIN per position and 200 items took 1.0 s and
   takes 0.37 s. Each distinct id form is also asked once per mail, so 50 items
   that repeat one id cost one scan.
-- **The set check does not use an id longer than 64 characters for line
-  matching.** A part number of 65 characters or more is not a part number: it
-  grounds nothing on a line, so a set line next to it corrects nothing.
-  `UNGROUNDED_ID` still reads it. The line-form scan also builds a form only at
-  a length an indexed id has, and yields it instead of holding a set, so a long
-  line of short tokens costs no memory: 100 KB of one-letter tokens beside a
-  64-character part number took 1.86 s and 568 MB, and takes 0.09 s and 19 MB.
+- **The set check does not use an id whose normalized form is longer than 64
+  characters for line matching.** A part number whose normalized form is 65
+  characters or more is not a part number: it grounds nothing on a line, so a
+  set line that only that id would claim corrects nothing. A printed id of 65
+  characters whose joiners bring the normalized form back to 64 still grounds.
+  `UNGROUNDED_ID` still reads such an id. The line-form scan also builds a form
+  only at a length an indexed id has, and yields it instead of holding a set, so
+  a long line of short tokens costs no memory: 100 KB of one-letter tokens
+  beside a 64-character part number took 1.86 s and 568 MB, and takes 0.09 s and
+  19 MB.
 - **The checks prove absence, not truth.** A value that occurs in the source can
   still be attached to the wrong item.
 - **An id is grounded on a token boundary, not as a substring.** A source that
@@ -372,7 +380,10 @@ name", not as a recall rate on real extractor output.
 - **German text and PDF ligatures do not shift the id index.** `ß` upper-cases
   to `SS`, and `ﬁ` and `ﬂ` upper-case to `FI` and `FL`. The boundary list keeps
   one slot per output character, so `Industriestraße 12` above an order grounds
-  the ids in that order exactly as `Industriestrasse 12` does.
+  the ids in that order exactly as `Industriestrasse 12` does. A description
+  match folds a ligature too, because the words are folded with NFKC before they
+  are compared: the `Proﬁlzylinder` of a PDF is the extraction's
+  `Profilzylinder`, so the GTIN is attached and not reported.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.
 - `UNCOVERED_LINK` appends a second item when the position exists but lost its
   link. Treat the pair as one position; it is a prompt to look, not a merge.
@@ -439,8 +450,8 @@ name", not as a recall rate on real extractor output.
   left boundary, so `1.000.000 Stück` reads as 1000000 and
   not as its last group `000`. `"2 pcs"` and `Decimal("2")` are quantities, so
   `VARIANT_SPLIT` keeps a line that carries one. The unit words are `x`, `×`,
-  `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`, `Stueck`, `units` and
-  `sets`. A quantity field that is not empty
+  `pc`, `pcs`, `piece`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`,
+  `Stueck`, `unit`, `units` and `sets`. A quantity field that is not empty
   keeps its line even when the parser cannot read the number: a line that
   states `"2 St."` or `10**400` is a second position, never a variant. Parsing
   is capped: a number above `10**9` or a digit run longer than 12 is ignored, so

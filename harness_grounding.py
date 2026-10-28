@@ -111,10 +111,14 @@ Codes and actions in this module:
     MISSING_GTIN  / "attached"   a valid GTIN in the source was missing from the
                                  extraction. A digit run counts as a GTIN only
                                  when its line names one (GTIN, EAN, UPC,
-                                 Barcode, Strichcode) and the run is not inside
-                                 a link. It is attached to the best-matching
-                                 item, which is marked uncertain. field is
-                                 "gtin" or "other_ids", new_value the GTIN.
+                                 Barcode, Strichcode, with an optional -13/-8
+                                 suffix or a Nr./No. label) and the run is not
+                                 inside a link. It is attached to the item its
+                                 line names: the part number on the line
+                                 decides, else exactly one description match,
+                                 which folds PDF ligatures (ﬁ is fi). The item
+                                 is marked uncertain. field is "gtin" or
+                                 "other_ids", new_value the GTIN.
     MISSING_GTIN  / "suggested"  the same attachment with apply=False. field and
                                  new_value name the key and the value apply=True
                                  would write, item_index and input_index the item
@@ -154,9 +158,25 @@ Codes and actions in this module:
                                  writes. Nothing is written.
     SET_MULTIPLIED / "corrected" the source says "N x M" and the item is an
                                  M-pack with quantity N*M, and the set line
-                                 belongs to that item (the item is grounded on
-                                 the set line or the line next to it, and the
-                                 pack marker sits on that same line). The
+                                 belongs to that item: the item is grounded on
+                                 the set line or on the line directly above it,
+                                 and the pack marker sits on that same line. A
+                                 stack of set lines shares one owner line, the
+                                 line above the stack else the line below it,
+                                 and a set line of a stack never reaches the
+                                 line below on its own. An item whose own
+                                 quantity does not parse keeps its line, an item
+                                 this module appended never takes one, and a
+                                 line that grounds an item by its id, GTIN or
+                                 link grounds no other item by description
+                                 words. Both links are compared without their
+                                 query string, so an item link that keeps its
+                                 "?spm=..." is still the link on the line. An id
+                                 whose normalized form is longer than 64
+                                 characters is not used for line matching, and
+                                 the line-form scan builds a form only at a
+                                 length an indexed id has, so a long line of
+                                 short tokens costs no memory. The
                                  quantity becomes N, the unit "set", and the
                                  item is marked uncertain. field is "quantity".
     SET_MULTIPLIED / "suggested" the same correction with apply=False. field is
@@ -190,8 +210,11 @@ Codes and actions in this module:
                                  blocking key, old_value the value the merge
                                  would have dropped, new_value None.
 
-A link is a product link only when product_link_id() returns an id for it. A
-link to any other host is not a product and is never added as an item.
+A link is a product link only when product_link_id() returns an id for it: a real
+marketplace host, and an id of the length that marketplace uses (an eBay item
+number has 9 to 13 digits, an AliExpress item id 9 to 17). A shorter or longer
+digit run is an ordinary link, and a link to any other host is not a product and
+is never added as an item.
 
 ground() returns (checked, findings). checked is a deep copy of the input, so
 the caller keeps the original and the module never mutates what it was given.
@@ -225,11 +248,12 @@ GTIN_LENGTHS = (8, 12, 13, 14)
 # the supplier mails ever written, so flagging it would be noise.
 MIN_ID_LEN = 4
 
-# Longest id the set check uses for line matching. A part number longer than 64
-# characters is not a part number, so it is not used for line matching: without
-# the cap one 1,000-character part number made the scan build 1,000-character
-# forms for every token on the line (352 MB and 1.3 s on a 6 KB mail). It is
-# still grounded and still flagged by UNGROUNDED_ID, which does not build forms.
+# Longest id the set check uses for line matching. A part number whose
+# normalized form is longer than 64 characters is not a part number, so it is
+# not used for line matching: without the cap one 1,000-character part number
+# made the scan build 1,000-character forms for every token on the line (352 MB
+# and 1.3 s on a 6 KB mail). It is still grounded and still flagged by
+# UNGROUNDED_ID, which does not build forms.
 # The scan itself builds only a form whose length an indexed id has, and yields
 # it instead of holding a set, so a long line of short tokens is cheap (N5').
 # See SPEC-REFERENCE.md, "A set line corrects only its own item".

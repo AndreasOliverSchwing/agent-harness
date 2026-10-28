@@ -226,11 +226,14 @@ A supplier that prints a GTIN with no keyword gets no attachment. That is a
 deliberate loss: a wrong GTIN is worse than a missing one, because the quote then
 prices another product.
 
-The GTIN is then attached to the item whose description shares at least half of
-its content words with the line. Generic words do not count (`part`, `item`,
-`quantity`, `GTIN`, `Barcode`, …). An overlap on "part" alone decides nothing,
-so a line that names no product produces `reported` with `item_index: None`
-rather than a GTIN on the wrong item.
+The GTIN is then attached to the item the line names, as "Which item a GTIN
+belongs to" sets out below: the part number on the line decides first, and the
+description is only the fallback. That fallback needs a share of at least
+`MATCH_RATIO` (0.5) of the smaller word set. Generic words do not count
+(`part`, `item`, `quantity`, `GTIN`, `Barcode`, …), and an item whose own part
+number is printed on another source line is never a candidate for it. A line
+that names no product produces `reported` with `item_index: None` rather than a
+GTIN on the wrong item.
 
 ### A GTIN is one number space
 
@@ -339,6 +342,10 @@ slot per OUTPUT character. `Industriestraße 12` above an order therefore ground
 the ids in that order exactly as `Industriestrasse 12` does, and no id after the
 `ß` shifts.
 
+A description match folds ligatures too. The words are folded with NFKC before
+they are compared, so the `Proﬁlzylinder` of a PDF is the extraction's
+`Profilzylinder`: the GTIN is attached, not reported.
+
 ### How a quantity is read
 
 A quantity counts whole pieces. That is the only fact the module needs, and it
@@ -368,8 +375,8 @@ delivery date on a line of its own (`26.10.2026`, `1.5.2026`, `13.11.2026`) is
 never read as a quantity. A first group of `0` never groups thousands, so
 `0,250` is 0.25 and not 250.
 
-The unit words are `x`, `×`, `pcs`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`,
-`Stück`, `Stueck`, `units` and `sets`. One list
+The unit words are `x`, `×`, `pc`, `pcs`, `piece`, `pieces`, `St.`, `Stck.`,
+`ST`, `Stk.`, `Stück`, `Stueck`, `unit`, `units` and `sets`. One list
 serves every quantity pattern, so a word that parses in a value also parses on a
 line of its own. `VE`, `Paar`, `Pack` and `kg` are not in the list: none of them
 names a count of pieces, so a quantity they follow is not read at all.
@@ -452,10 +459,11 @@ Two conditions must hold, and both must hold on one line:
    2er-Pack` through the shared word "Pack". The pack words (`pack`, `packs`,
    `packung`, `packungen`, `set`, `sets`, `satz`) are generic and never count
    as a description match.
-   An id longer than 64 characters is not used for line matching. A part
-   number of 65 characters or more is not a part number: it does not ground a
-   line, so the set line it sits on owns no item. `UNGROUNDED_ID` still reads
-   it, because that check does not build forms.
+   An id whose normalized form is longer than 64 characters is not used for
+   line matching. A part number whose normalized form is 65 characters or more
+   is not a part number: it does not ground a line, so the set line it sits on
+   owns no item. `UNGROUNDED_ID` still reads it, because that check does not
+   build forms.
    The line-form scan builds a form only at a length an indexed id has, and it
    yields the form instead of collecting the forms in a set. A form of another
    length cannot match, so building it is wasted work: on a 100 KB line of
