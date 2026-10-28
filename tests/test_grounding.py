@@ -625,6 +625,28 @@ class GroundMissingGtinTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["other_ids"], ["2000000000008"])
 
+    def test_a_gtin_never_goes_to_an_item_whose_part_number_is_printed_elsewhere(self):
+        # S10' of the second review. The description fallback lacked the guard
+        # the set check has: when an item's own part number occurs in the
+        # source, only a line that carries that id grounds it. Pos. 2 prints no
+        # part number, so the shared word "Kabelbinder" handed its GTIN to
+        # AC-44170 on the line above.
+        source = ("Pos. 1: AC-44170 Kabelbinder 200 mm schwarz, 8 St\u00fcck\n"
+                  "Pos. 2: Kabelbinder 200 mm wei\u00df, 4 St\u00fcck, "
+                  "EAN 2000000000015")
+        extraction = {"items": [{"part_number": "AC-44170",
+                                 "description": "Kabelbinder 200 mm schwarz",
+                                 "quantity": 8}]}
+        for apply in (False, True):
+            checked, findings = G.ground(extraction, source, apply=apply)
+            self.assertEqual([(f["code"], f["action"]) for f in findings],
+                             [("MISSING_GTIN", "reported")])
+            self.assertIsNone(findings[0]["item_index"])
+            self.assertIsNone(findings[0]["new_value"])
+            self.assertNotIn("gtin", checked["items"][0])
+            self.assertNotIn("other_ids", checked["items"][0])
+            self.assertNotIn("uncertain", checked["items"][0])
+
     def test_one_item_takes_at_most_one_attached_gtin(self):
         # Both numbers sit on the one line that names the item. One item can
         # carry one GTIN, so the second number is reported, not attached: an

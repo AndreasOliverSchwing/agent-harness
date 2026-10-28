@@ -1674,10 +1674,12 @@ def _check_missing_gtins(items, origins, source_text, apply):
     reported (S9').
 
     When the line names no part number, the description decides, and only when
-    exactly one item matches. Generic words do not count: "part" occurs in half
-    the descriptions and in half the source lines, so an overlap on it alone
-    must not move a GTIN to another product. A tie, or no match at all, is
-    reported with item_index None and nothing is written.
+    exactly one item matches. An item whose own part number is printed on
+    another source line is not a candidate for that fallback: the line that
+    prints the id is that item's line (S10'). Generic words do not count: "part"
+    occurs in half the descriptions and in half the source lines, so an overlap
+    on it alone must not move a GTIN to another product. A tie, or no match at
+    all, is reported with item_index None and nothing is written.
 
     A bare GTIN line is one whose line holds nothing but the keyword and the
     number. It names no product of its own, so it reads the neighbour that names
@@ -1722,6 +1724,7 @@ def _check_missing_gtins(items, origins, source_text, apply):
     owners = {}
     quotes = {}
     attached = set()
+    owner_cache = {}
     named_above, named_below, layout = _bare_gtin_layout(
         candidates, items, origins, lines, facts, item_words)
     for gtin, line_index, bare in candidates:
@@ -1751,7 +1754,7 @@ def _check_missing_gtins(items, origins, source_text, apply):
             index, note = owners[key]
         else:
             index, note = _gtin_owner(items, origins, neighbour or line,
-                                      facts, item_words)
+                                      facts, item_words, lines, owner_cache)
             owners[key] = (index, note)
         if index is not None and index in attached:
             note = ("the line names item %d, which already %s a GTIN from the "
@@ -1914,7 +1917,7 @@ def _bare_gtin_layout(candidates, items, origins, lines, facts, item_words):
     return names_above, names_below, None
 
 
-def _gtin_owner(items, origins, match_line, facts, item_words):
+def _gtin_owner(items, origins, match_line, facts, item_words, lines, cache):
     """Return (index, note) for the item a GTIN line names, or (None, note).
 
     The part number on the line decides, on a token boundary. It is the one
@@ -1935,13 +1938,18 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
     When neither line names a part number, the description decides, but only
     when exactly one item reaches MATCH_RATIO. A tie, or no match at all, is
     (None, note): a reported GTIN is cheap, a GTIN on the wrong product is not.
+    An item whose own part number is printed on another source line is not a
+    candidate for this fallback, the same guard the set check has: the line
+    that prints the id is that item's line, and a shared description word must
+    not hand another position's GTIN to it (S10').
 
     An item this module appended is never a candidate. It carries a link and no
     product, so it cannot own a GTIN.
 
-    facts is the line-token cache and item_words the description words of each
-    item, both built once by the caller: a line of thousands of GTINs is
-    tokenised once, not once per number.
+    facts is the line-token cache, item_words the description words of each
+    item and lines the source lines; all three are built once by the caller, and
+    cache holds the id-in-source set that the description fallback needs. A line
+    of thousands of GTINs is tokenised once, not once per number.
     """
     flat, boundary, hard, glue, line_words = _line_tokens(facts, match_line)
     by_part = _items_by_part(items, origins, flat, boundary, hard, glue)
@@ -1954,12 +1962,51 @@ def _gtin_owner(items, origins, match_line, facts, item_words):
     if len(by_part) > 1:
         return None, ("the line names the part number of %d items, so the "
                       "product is ambiguous" % len(by_part))
+    if by_words:
+        printed = _ids_printed_on_a_line(items, origins, lines, facts, cache)
+        by_words = [index for index in by_words if index not in printed]
     if len(by_words) == 1:
         return by_words[0], "exactly one description matches the line"
     if len(by_words) > 1:
         return None, ("%d descriptions match the line, so the product is "
                       "ambiguous" % len(by_words))
     return None, "the line names no item of the extraction"
+
+
+def _ids_printed_on_a_line(items, origins, lines, facts, cache):
+    """Return the item indexes whose part number occurs on some source line.
+
+    This is the guard the set check states in _grounded_by_line(): when an
+    item's own id DOES occur in the source, only a line that carries that id
+    grounds it. The description fallback of the GTIN owner asks the same
+    question, so it asks it once per check and keeps the answer in cache.
+
+    The scan builds only a form whose length an indexed id has, and the line
+    tokens come from the caller's cache, so the cost is one pass over the
+    source, not one pass per candidate item.
+    """
+    printed = cache.get("printed")
+    if printed is not None:
+        return printed
+    index = {}
+    for item_index, item in enumerate(items):
+        if not isinstance(item, dict) or origins[item_index] is None:
+            continue
+        form = _id_form(item.get("part_number"))
+        if MIN_ID_LEN <= len(form) <= MAX_LINE_ID_LEN:
+            index.setdefault(form, set()).add(item_index)
+    printed = set()
+    lengths = sorted(set(len(form) for form in index))
+    if lengths:
+        for line in lines:
+            flat, boundary, hard, _glue, _words = _line_tokens(facts, line)
+            fact = {"flat": flat, "boundary": boundary, "hard": hard}
+            for form in _line_id_forms(fact, lengths):
+                found = index.get(form)
+                if found:
+                    printed.update(found)
+    cache["printed"] = printed
+    return printed
 
 
 def _items_by_part(items, origins, flat, boundary, hard, glue):

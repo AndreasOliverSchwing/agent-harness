@@ -269,7 +269,10 @@ AC-44170` names the gasket, not AC-44170).
   anchors that disagree, reports the line between two items, because the line
   above belongs to the previous position.
 - When no part number stands on the line, the description decides, and only
-  when exactly one item reaches the match ratio.
+  when exactly one item reaches the match ratio. An item whose own part number
+  is printed on another source line is not a candidate for this fallback: the
+  line that prints the id is that item's line, so a shared description word
+  never hands another position's GTIN to it.
 - A tie, or no match at all, is reported with `item_index` null. Nothing is
   written. One item in the extraction is not a reason to attach.
 - An item this module appended never takes a GTIN. It carries a link and no

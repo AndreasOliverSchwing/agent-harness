@@ -328,6 +328,18 @@ below is one card of that round.
   28 is suggested in the default mode and written with `apply=True`. Documented
   in `SPEC-REFERENCE.md`, `README.md` and the `_grounded_by_line()` docstring.
 
+- **A GTIN never goes to an item whose part number is printed elsewhere
+  (S10′).** The description fallback of the GTIN owner lacked the guard the set
+  check has. `Pos. 1: AC-44170 Kabelbinder 200 mm schwarz, 8 Stück` over
+  `Pos. 2: Kabelbinder 200 mm weiß, 4 Stück, EAN G1` handed Pos. 2's GTIN to
+  AC-44170, because both lines share the word "Kabelbinder". An item whose own
+  part number occurs on a source line is now not a candidate for the description
+  fallback: the line that prints the id is that item's line. G1 is reported in
+  both modes. The id-in-source set is built once per check and only when a
+  description fallback is reached. Documented in `SPEC-REFERENCE.md`,
+  `README.md` and the `_check_missing_gtins()`, `_gtin_owner()` and
+  `_ids_printed_on_a_line()` docstrings.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
