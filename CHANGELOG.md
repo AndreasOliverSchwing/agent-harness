@@ -317,6 +317,17 @@ below is one card of that round.
   modes. Documented in `SPEC-REFERENCE.md`, `README.md`, and the
   `_check_missing_gtins()`, `_bare_gtin_layout()` and `_gtin_owner()` docstrings.
 
+- **A link with a query string grounds its own line (S4′).** The set check
+  indexed an item's link exactly as the caller wrote it and looked it up among
+  the cleaned source links, so an item whose only grounding was its link was not
+  on the line when that link kept its query string:
+  `Pos. 1: Kabelbinder 5er-Pack <link>?spm=a2g0o.detail.0.0` over
+  `Menge: 28 x 5` left the quantity at 140 with no finding. Both links are now
+  compared without their query string and fragment, the way `find_links()` reads
+  a source link and the way fix round 2 already did for `REDACTED_LINK` (S13).
+  28 is suggested in the default mode and written with `apply=True`. Documented
+  in `SPEC-REFERENCE.md`, `README.md` and the `_grounded_by_line()` docstring.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on

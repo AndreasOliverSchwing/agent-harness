@@ -2510,7 +2510,9 @@ def _grounded_by_line(items, facts):
     A line grounds an item when it holds the item's part number or GTIN on a
     token boundary, when it holds the item's link (or a link with the item's
     marketplace id), or when it shares MATCH_RATIO of the item's description
-    words.
+    words. Both links are compared without their query string and fragment, the
+    way find_links() reads a source link: an item link that keeps its
+    "?spm=..." is the same link as the cleaned one on the line (S4').
 
     The description rule is only a fallback, and it is what carries an item
     whose part number the extractor did not read. When the item's own id DOES
@@ -2553,8 +2555,8 @@ def _grounded_by_line(items, facts):
             flat = _id_form(value)
             if MIN_ID_LEN <= len(flat) <= MAX_LINE_ID_LEN:
                 ids.setdefault(flat, set()).add(index)
-        link = item.get("link")
-        if isinstance(link, str) and link:
+        link = _clean_link(item.get("link"))
+        if link:
             links.setdefault(link, set()).add(index)
         for link_id in _as_list(item.get("other_ids")):
             if not isinstance(link_id, str) or not link_id.strip():

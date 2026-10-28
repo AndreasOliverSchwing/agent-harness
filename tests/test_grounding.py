@@ -2317,6 +2317,31 @@ class GroundSetMultipliedTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["unit"], "set")
         self.assertTrue(checked["items"][0]["uncertain"])
 
+    def test_a_link_with_a_query_string_grounds_its_own_line(self):
+        # S4' of the second review. The set check indexed the item's link as the
+        # caller wrote it and looked it up among the cleaned source links, so an
+        # item whose only grounding is its link was not on the line when that
+        # link carried a query string: the quantity stayed 140 with no finding.
+        # The link is the only thing that grounds this item, because its line
+        # holds no part number and the item has no description.
+        link = ("https://de.aliexpress.com/item/1005001234567.html"
+                "?spm=a2g0o.detail.0.0")
+        source = "Pos. 1: Kabelbinder 5er-Pack %s\nMenge: 28 x 5" % link
+        extraction = {"items": [{"link": link, "quantity": 140}]}
+
+        checked, findings = G.ground(extraction, source)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "suggested")
+        self.assertEqual(findings[0]["old_value"], 140)
+        self.assertEqual(findings[0]["new_value"], 28)
+        self.assertEqual(checked["items"][0]["quantity"], 140)
+
+        checked, findings = G.ground(extraction, source, apply=True)
+        self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
+        self.assertEqual(findings[0]["action"], "corrected")
+        self.assertEqual(checked["items"][0]["quantity"], 28)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+
     def test_ground_corrects_pack_of_form(self):
         source = "Acme Tools\nMenge: 12 x 5\nWasher pack of 5\n"
         extraction = {"items": [{"description": "Washer pack of 5",

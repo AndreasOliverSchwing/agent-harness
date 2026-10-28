@@ -440,7 +440,9 @@ name", not as a recall rate on real extractor output.
   module appended for an uncovered link never takes a set line. A pack word
   only in the extractor's description is never enough.
   A line grounds an item by its part number, GTIN or link, or by the item's
-  description words. The description is a fallback only: when the item's part
+  description words. Both links are compared without their query string, so an
+  item link that keeps its `?spm=…` is still the link on the line. The
+  description is a fallback only: when the item's part
   number occurs anywhere in the source, only a line that carries that id
   grounds it. A line that grounds an item by its id, GTIN or link grounds no
   other item by description words. The pack words (`pack`, `packs`, `packung`,
