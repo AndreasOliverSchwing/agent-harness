@@ -340,6 +340,19 @@ below is one card of that round.
   `README.md` and the `_check_missing_gtins()`, `_gtin_owner()` and
   `_ids_printed_on_a_line()` docstrings.
 
+- **A merge never loses data (S11′).** `VARIANT_SPLIT` folded a repeated part
+  number into the first item and dropped three values in silence: a link that
+  differed from the survivor's only in its query string (the merge compared the
+  cleaned links and saw them as equal), a `gtin` that was not a string (the merge
+  skipped it), and any key the merge does not know (`"colour": "silber"`). The
+  only finding was the note. A merge is now not made when it would lose such a
+  value: both items stay and one `VARIANT_SPLIT` finding reports it with action
+  `flagged`, `field` the blocking key, `old_value` the value the merge would have
+  dropped and `new_value` `None`. A value both lines hold the same way does not
+  block. Documented in `SPEC-REFERENCE.md`, `README.md` and the
+  `_check_variant_split()`, `_merge_blocking_value()` and `_carries_data()`
+  docstrings.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on

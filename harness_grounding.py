@@ -177,6 +177,15 @@ Codes and actions in this module:
                                  because nothing was written. A unit or a price
                                  is never written and a difference is reported
                                  the same way.
+    VARIANT_SPLIT / "flagged"    a later item repeats the part number of an
+                                 earlier one and has no quantity of its own,
+                                 but the merge would lose a value the survivor
+                                 cannot take: a link that differs in its query
+                                 string only, a gtin that is not a string, or a
+                                 key this module does not know. Both items are
+                                 kept and nothing is written. field is the
+                                 blocking key, old_value the value the merge
+                                 would have dropped, new_value None.
 
 A link is a product link only when product_link_id() returns an id for it. A
 link to any other host is not a product and is never added as an item.
@@ -1421,6 +1430,16 @@ def _check_variant_split(items, origins):
     therefore read the way the source lists the variants, and an item_index is
     read from the rebuilt list instead of being recorded before a later pop
     shifts it.
+
+    A merge that cannot be made without loss is not made (S11'). Two lines of
+    one part number are the same order line only when every value the variant
+    holds fits on the survivor. Three values do not fit: a link that differs
+    from the survivor's in its query string only (the product is the same, the
+    variant URL is not), a gtin that is not a string (a merge writes only
+    strings), and a key this module does not know. Both items stay, and one
+    VARIANT_SPLIT finding says which value blocked the merge: action "flagged",
+    field the blocking key, old_value the variant's value, new_value None,
+    because nothing was written.
     """
     survivor_for = {}
     pairs = []
@@ -1446,9 +1465,16 @@ def _check_variant_split(items, origins):
 
     input_of = list(origins)
     merges = []
+    blocked = []
     for index, first_index in pairs:
         first = items[first_index]
         variant = items[index]
+        blocking = _merge_blocking_value(first, variant)
+        if blocking is not None:
+            # A value the survivor cannot take without loss. Both lines stay,
+            # and the value is named in the finding (S11').
+            blocked.append((first, blocking, input_of[index]))
+            continue
         label = variant.get("description") or normalize_id(
             first.get("part_number"))
         piece = "variant: %s" % label
@@ -1461,9 +1487,9 @@ def _check_variant_split(items, origins):
         first["note"] = ("%s · %s" % (note, piece)) if note else piece
         first["uncertain"] = True
         writes, conflicts = _merge_variant_values(first, variant)
-        merges.append((first, writes, conflicts, piece, input_of[index]))
+        merges.append((first, writes, conflicts, piece, input_of[index], index))
 
-    removed = set(index for index, _first_index in pairs)
+    removed = set(entry[5] for entry in merges)
     kept = [index for index in range(len(items)) if index not in removed]
     position_of = {}
     for position, index in enumerate(kept):
@@ -1472,7 +1498,7 @@ def _check_variant_split(items, origins):
     origins[:] = [input_of[index] for index in kept]
 
     findings = []
-    for first, writes, conflicts, piece, variant_input in merges:
+    for first, writes, conflicts, piece, variant_input, _index in merges:
         position = position_of[id(first)]
         number = normalize_id(first.get("part_number"))
         findings.append(_finding(
@@ -1508,9 +1534,77 @@ def _check_variant_split(items, origins):
                 new_value=None,
                 item_index=position,
                 input_index=variant_input))
+    for first, blocking, variant_input in blocked:
+        key, value = blocking
+        findings.append(_finding(
+            "VARIANT_SPLIT", "flagged",
+            evidence="the variant line carries %s %s and the surviving item "
+                     "cannot take it without loss, so both lines are kept"
+                     % (key, _quote("%s" % (value,))),
+            field=key,
+            old_value=value,
+            new_value=None,
+            item_index=position_of[id(first)],
+            input_index=variant_input))
     findings.sort(key=lambda finding: (finding["item_index"],
                                        finding["input_index"]))
     return findings
+
+
+# The item keys a merge accounts for: it writes the value onto the survivor,
+# reports it as a conflict, or folds it into the survivor's note. Any other key
+# that carries a value is data a merge would drop, so the pair is not merged.
+_MERGE_KEYS = frozenset((
+    "part_number", "description", "quantity", "unit", "price", "link", "gtin",
+    "other_ids", "note", "uncertain",
+))
+
+
+def _merge_blocking_value(survivor, variant):
+    """Return (key, value) when merging variant into survivor would lose data.
+
+    None means the merge is safe. Three values do not fit on the survivor
+    (S11'):
+
+    - a link that differs from the survivor's in its query string only. The
+      cleaned links are equal, so the product is the same one, but the variant
+      URL is a different value and a merge writes only the survivor's;
+    - a gtin that is not a string. The merge moves strings, so an int would be
+      skipped in silence;
+    - a key this module does not know, when it carries a value the survivor
+      does not already hold. Nothing in the module can move such a value, and
+      nothing reports it either.
+
+    A value both lines hold the same way is not a loss, so it does not block.
+    """
+    theirs = variant.get("link")
+    ours = survivor.get("link")
+    if (isinstance(theirs, str) and theirs.strip()
+            and isinstance(ours, str) and ours.strip()
+            and theirs.strip() != ours.strip()
+            and _clean_link(theirs).lower() == _clean_link(ours).lower()):
+        return "link", theirs
+    theirs = variant.get("gtin")
+    if _carries_data(theirs) and not isinstance(theirs, str):
+        if normalize_id(theirs) != normalize_id(survivor.get("gtin")):
+            return "gtin", theirs
+    for key in sorted(variant):
+        if key in _MERGE_KEYS:
+            continue
+        value = variant[key]
+        if not _carries_data(value):
+            continue
+        if _same_text(value, survivor.get(key)):
+            continue
+        return key, value
+    return None
+
+
+def _carries_data(value):
+    """True when value is data a merge would lose: not None, not blank, not empty."""
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return _has_text(value)
 
 
 def _merge_variant_values(survivor, variant):

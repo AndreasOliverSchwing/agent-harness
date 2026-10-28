@@ -519,6 +519,21 @@ Nothing a merge touches is dropped:
   `None`, and `evidence` names the value the survivor kept. The two compare
   ignoring case and surrounding space, so `piece` and `Piece` are one value.
 
+A merge is not made at all when it would lose a value the survivor cannot take:
+
+- a `link` that differs from the survivor's in its query string only. The
+  cleaned links are equal, so both lines are one product, but the variant URL is
+  a different value and a merge writes only the survivor's;
+- a `gtin` that is not a string. The merge moves strings, so an int would be
+  skipped in silence;
+- a key this module does not know, when it carries a value the survivor does not
+  already hold.
+
+Both items stay. One `VARIANT_SPLIT` finding reports it: action `flagged`, `field`
+the blocking key, `old_value` the value the merge would have dropped, `new_value`
+`None`, `item_index` the survivor and `input_index` the line that was not merged.
+A value both lines hold the same way is not a loss, so it does not block.
+
 ### The finding contract
 
 Every finding from every check has exactly eight keys:

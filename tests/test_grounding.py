@@ -3019,6 +3019,88 @@ class GroundVariantSplitTest(unittest.TestCase):
         self.assertEqual([f["input_index"] for f in findings], [1, 2])
 
 
+class VariantMergeLossTest(unittest.TestCase):
+    """S11': a merge never loses data (README.md, "Every change is reported").
+
+    A value the survivor cannot take without loss blocks the merge. Both items
+    stay, and one VARIANT_SPLIT finding says which value blocked it: action
+    "flagged", field the blocking key, new_value None, old_value the variant's
+    value that would have been lost.
+    """
+
+    SOURCE = "Acme Tools\nPos. 1: AC-44170 Schraube M8, 4 St\u00fcck\n"
+
+    def _assert_blocked(self, extraction, field, variant_value):
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(len(checked["items"]), 2)
+        self.assertEqual(checked["items"][1].get(field), variant_value)
+        self.assertNotIn("note", checked["items"][0])
+        split = [f for f in findings if f["code"] == "VARIANT_SPLIT"]
+        self.assertEqual(len(split), 1)
+        finding = split[0]
+        self.assertEqual(finding["action"], "flagged")
+        self.assertEqual(finding["field"], field)
+        self.assertEqual(finding["old_value"], variant_value)
+        self.assertIsNone(finding["new_value"])
+        self.assertEqual(finding["item_index"], 0)
+        self.assertEqual(finding["input_index"], 1)
+        return finding
+
+    def test_a_link_that_differs_in_its_query_string_blocks_the_merge(self):
+        # The two links clean to the same product, so the merge saw them as
+        # equal and dropped the variant's own URL without a finding.
+        survivor = ("https://de.aliexpress.com/item/1005001234567.html"
+                    "?sku_id=12000000001")
+        variant = ("https://de.aliexpress.com/item/1005001234567.html"
+                   "?sku_id=12000000002")
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4, "link": survivor},
+            {"part_number": "AC-44170", "link": variant},
+        ]}
+        finding = self._assert_blocked(extraction, "link", variant)
+        self.assertIn("1005001234567", finding["evidence"])
+
+    def test_a_gtin_that_is_not_a_string_blocks_the_merge(self):
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "AC-44170", "gtin": 2000000000015},
+        ]}
+        self._assert_blocked(extraction, "gtin", 2000000000015)
+
+    def test_an_unknown_key_blocks_the_merge(self):
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "AC-44170", "colour": "silber"},
+        ]}
+        self._assert_blocked(extraction, "colour", "silber")
+
+    def test_an_unknown_key_both_lines_share_does_not_block_the_merge(self):
+        # A value both lines already hold is not a loss, so it does not stop
+        # the merge: the survivor keeps it.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4, "colour": "silber"},
+            {"part_number": "AC-44170", "colour": "Silber"},
+        ]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(len(checked["items"]), 1)
+        self.assertEqual(checked["items"][0]["colour"], "silber")
+        self.assertEqual([f["action"] for f in findings], ["merged"])
+
+    def test_a_variant_with_no_unmergeable_value_is_still_merged(self):
+        # The guard must not stop the ordinary merge: a description is the
+        # variant's label and a note is folded into the survivor's note.
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 4},
+            {"part_number": "AC-44170", "description": "Schraube M8 silber",
+             "note": "zinc plated"},
+        ]}
+        checked, findings = G.ground(extraction, self.SOURCE)
+        self.assertEqual(len(checked["items"]), 1)
+        self.assertEqual([f["action"] for f in findings], ["merged"])
+        self.assertEqual(checked["items"][0]["note"],
+                         "variant: Schraube M8 silber (zinc plated)")
+
+
 class IndexDivergenceTest(unittest.TestCase):
     """S9: after a merge, every later finding can name two different indexes.
 
