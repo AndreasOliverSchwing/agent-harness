@@ -99,8 +99,11 @@ class ScoreCaseTest(unittest.TestCase):
         result = R.score_case(BROKEN)
         self.assertTrue(result["caught"])
         self.assertTrue(result["corrected"])
-        self.assertFalse(result["false_alarm"])
         self.assertEqual(result["codes"], ["MISSING_GTIN"])
+        # No false_alarm assertion here (N4'): is_false_alarm() is False for
+        # every case that is not a clean control, so asserting it on an error
+        # case can never fail. The clean control below is where it means
+        # something.
 
     def test_a_sound_extraction_raises_no_finding(self):
         result = R.score_case(SOUND)

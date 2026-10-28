@@ -381,6 +381,42 @@ below is one card of that round.
   the item is fixed. The QA 5 probe is ported with a 5,000-digit value built by
   arithmetic, because the script's `int("9" * 5000)` raises on Python 3.11+.
 
+- **The second review's inputs, its realistic German mail and its 100 KB shapes
+  are permanent tests (3.8).** The 20 inputs of the second review lived in a
+  script outside the repo. Cards 3.2 to 3.6 added 19 of them as tests in
+  `tests/test_grounding.py`; the new `tests/test_regression_review2.py` names
+  each of the 19 in its docstring and adds the one that had none (N4': the S1
+  follow-up `id_grounded` guard, the hard rule in `_line_id_forms` and the
+  suffix `rstrip` of the redacted-link restore, each with the reviewer's input).
+  No input is open after round 3, so the file carries no `expectedFailure`.
+- **The realistic German mail is one test (3.8).** `review2-probes/p_realistic_de.py`
+  becomes `RealisticGermanMailTest`, in both modes, per item: the three table
+  positions keep the extractor's values and take no GTIN (the only "EAN" is the
+  column header, a documented limit), Pos. 40's stack of set lines corrects
+  Pos. 40 to 3 sets and nothing else, Pos. 50 keeps its 6 pieces, and the
+  appended Amazon item takes the link, `ASIN:B0TESTAAA1` and the "2 Stück"
+  below it with unit `piece`. The default mode suggests the two writes and
+  makes neither. One question the docs do not decide is in the card result: no
+  check reads the quoted reply block, and the docs never say whether one
+  counts.
+- **The 100 KB shapes are cost tests, and two scans are linear again (3.8).**
+  Every shape of `p_shapes.py`, both layouts of `p_findlinks.py`, `p_lineforms.py`
+  with a 64-character id and `p_links_blowup.py` with 420 links now hold the
+  suite's 1 s bound, and the last two also hold a `tracemalloc` peak of 50 MB and
+  100 MB. Two shapes were over the bound and are fixed without changing a
+  verdict. The verbatim id rule walked every occurrence of the id with
+  `str.find`, so a 100 KB run of one letter beside 50 items of that letter took
+  2.2 s: it is one compiled pattern with a one-character lookbehind and
+  lookahead now, 0.05 s, and it is read only for an id that holds a character
+  which is not a letter or a digit, because for an id of letters and digits
+  alone the flat form is the id as printed. The GTIN owner rebuilt the
+  comparable form of every item's part number once per source line, so 200 items
+  over 3,847 lines cost 770,000 calls and 1.0 s: the forms are built once per
+  mail, 0.37 s, and each distinct id form is asked once. Documented in
+  `README.md`, `SPEC-REFERENCE.md`, the module docstring and the
+  `_id_occurs_verbatim()`, `_holds_punctuation()`, `_item_part_forms()` and
+  `_check_ids()` docstrings.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
