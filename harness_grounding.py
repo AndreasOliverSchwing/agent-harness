@@ -211,6 +211,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+import unicodedata
 from bisect import bisect_right
 from decimal import Decimal
 from urllib.parse import urlsplit
@@ -1939,10 +1940,14 @@ def _words(text):
     Generic words are dropped. "part", "item", "quantity" and "GTIN" name no
     product, and they occur in descriptions and in source lines alike, so an
     overlap on one of them alone must not decide where a GTIN goes.
+
+    The text is folded with NFKC first, so a PDF ligature such as "ﬁ" in
+    "Proﬁlzylinder" is the "fi" the description spells (N6').
     """
     if not isinstance(text, str):
         return set()
-    return set(word.lower() for word in _WORD.findall(text)
+    return set(word.lower()
+               for word in _WORD.findall(unicodedata.normalize("NFKC", text))
                if len(word) >= MIN_WORD_LEN
                and word.lower() not in GENERIC_WORDS)
 

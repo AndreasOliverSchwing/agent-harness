@@ -647,6 +647,21 @@ class GroundMissingGtinTest(unittest.TestCase):
             self.assertNotIn("other_ids", checked["items"][0])
             self.assertNotIn("uncertain", checked["items"][0])
 
+    def test_a_ligature_in_the_source_matches_the_description(self):
+        # N6' of the second review. _words kept the PDF ligature "\ufb01", so the
+        # description "Profilzylinder 30/30 mm" did not match "Pro\ufb01lzylinder"
+        # and the GTIN was reported instead of attached.
+        source = ("Pos. 1: Pro\ufb01lzylinder 30/30 mm, 2 St\u00fcck, "
+                  "EAN 2000000000015")
+        extraction = {"items": [{"description": "Profilzylinder 30/30 mm"}]}
+        for apply in (False, True):
+            checked, findings = G.ground(extraction, source, apply=apply)
+            self.assertEqual(
+                [(f["code"], f["action"]) for f in findings],
+                [("MISSING_GTIN", "attached" if apply else "suggested")])
+            if apply:
+                self.assertEqual(checked["items"][0]["gtin"], "2000000000015")
+
     def test_one_item_takes_at_most_one_attached_gtin(self):
         # Both numbers sit on the one line that names the item. One item can
         # carry one GTIN, so the second number is reported, not attached: an

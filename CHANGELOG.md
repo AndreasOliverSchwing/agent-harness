@@ -360,6 +360,13 @@ below is one card of that round.
   finding now carries the survivor's note in `old_value`, and `None` when it
   held none. Documented in `SPEC-REFERENCE.md` and the module docstring.
 
+- **A PDF ligature in a description matches (N6′).** `_words()` lower-cased the
+  text but did not fold it, so the ligature `ﬁ` in a PDF's `Proﬁlzylinder` was
+  not the `fi` of the extraction's `Profilzylinder`: the description match failed
+  and the GTIN was reported instead of attached. `_words()` now folds the text
+  with NFKC before it reads the words, so `Proﬁlzylinder 30/30 mm` matches in
+  both modes. Documented in the `_words()` docstring.
+
 ### Fixed in the second review round
 
 The recheck of 2026-10-27 (branch `feat/grounding-checks`) found defects on
