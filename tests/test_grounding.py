@@ -3753,5 +3753,174 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
             ground_infer({"items": []}, "", True)
 
 
+class FlagOnlyDefaultTest(unittest.TestCase):
+    """Round 4, card 4.2: the flag-only default, and the infer=True opt-in.
+
+    The release gate (bench/gate) measures four checks that propose an owner, a
+    quantity or a merge the source does not prove. On 70fb2d9 the gate counted
+    427 wrong MISSING_GTIN owners, 35 wrong UNCOVERED_LINK quantities, 176 wrong
+    SET_MULTIPLIED owners and 8 wrong VARIANT_SPLIT merges. Those four are
+    flag-only by default: they report or flag, and they write nothing. The old
+    inference stays behind infer=True, for measurement.
+
+    REDACTED_LINK measured 0 wrong, so it keeps its suggestion: the default
+    suggests the link, apply=True restores it.
+
+    Every test calls G.ground() directly, never the ground_infer() partial, and
+    runs both modes unless the test says otherwise.
+    """
+
+    def test_a_missing_gtin_is_reported_and_never_attached(self):
+        extraction = {"items": [{"part_number": "AC-4417", "quantity": 4}]}
+        source = "Pos. 1: AC-4417 Bohrschrauber\nEAN: 2000000000015\n"
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                missing = [f for f in findings if f["code"] == "MISSING_GTIN"]
+                self.assertEqual(len(missing), 1)
+                finding = missing[0]
+                self.assertEqual(finding["action"], "reported")
+                self.assertIsNone(finding["item_index"])
+                self.assertIsNone(finding["input_index"])
+                self.assertIsNone(finding["new_value"])
+                # The GTIN comes first, so the 200-character quote cut can
+                # never drop the number the finding is about.
+                self.assertTrue(finding["evidence"].startswith(
+                    "GTIN 2000000000015: "))
+                item = checked["items"][0]
+                self.assertNotIn("gtin", item)
+                self.assertNotIn("uncertain", item)
+
+    def test_an_uncovered_link_is_added_without_a_quantity(self):
+        source = "2 Stück https://www.amazon.de/dp/B0TEST1234\n"
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                checked, findings = G.ground({}, source, apply=apply)
+                self.assertEqual([f["action"] for f in findings], ["added"])
+                self.assertNotIn("suggested",
+                                 [f["action"] for f in findings])
+                # The placeholder carries the link and its marketplace id and
+                # nothing else: no quantity, no unit, no invented description.
+                self.assertEqual(set(checked["items"][0]),
+                                 {"link", "other_ids", "uncertain"})
+
+    def test_a_multiplied_set_is_reported_and_not_corrected(self):
+        extraction = {"items": [{"part_number": "AC-4417",
+                                 "description": "Kabelbinder 2er-Pack",
+                                 "quantity": 8, "unit": "piece"}]}
+        source = "AC-4417 Kabelbinder 2er-Pack\nMenge: 4 x 2\n"
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                self.assertEqual(len(findings), 1)
+                finding = findings[0]
+                self.assertEqual(finding["code"], "SET_MULTIPLIED")
+                self.assertEqual(finding["action"], "reported")
+                self.assertIsNone(finding["item_index"])
+                self.assertIsNone(finding["new_value"])
+                self.assertIn("4 x 2", finding["evidence"])
+                item = checked["items"][0]
+                self.assertEqual(item["quantity"], 8)
+                self.assertEqual(item["unit"], "piece")
+
+    def test_a_variant_line_is_flagged_and_not_merged(self):
+        extraction = {"items": [
+            {"part_number": "AC-44170", "quantity": 20},
+            {"part_number": "AC-44170", "description": "Ausführung verzinkt"},
+        ]}
+        source = "AC-44170 Schraube, 20 Stück\nAusführung: verzinkt\n"
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                # Both lines stay. No merge means no item is removed, so
+                # item_index and input_index still agree.
+                self.assertEqual(len(checked["items"]), 2)
+                splits = [f for f in findings if f["code"] == "VARIANT_SPLIT"]
+                self.assertEqual(len(splits), 1)
+                finding = splits[0]
+                self.assertEqual(finding["action"], "flagged")
+                self.assertEqual(finding["field"], "part_number")
+                self.assertEqual(finding["item_index"], 1)
+                self.assertEqual(finding["input_index"], 1)
+                self.assertIsNone(finding["new_value"])
+                self.assertTrue(checked["items"][1]["uncertain"])
+                self.assertNotIn("note", checked["items"][0])
+
+    def test_a_redacted_link_is_suggested_then_restored(self):
+        extraction = {"items": [{"link": "https://www.ebay.de/itm/[Telefon]",
+                                 "quantity": 2}]}
+        source = "Bitte 2 Stück https://www.ebay.de/itm/123456789012\n"
+        restored = "https://www.ebay.de/itm/123456789012"
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                checked, findings = G.ground(extraction, source, apply=apply)
+                redacted = [f for f in findings
+                            if f["code"] == "REDACTED_LINK"]
+                self.assertEqual(len(redacted), 1)
+                finding = redacted[0]
+                self.assertEqual(finding["new_value"], restored)
+                item = checked["items"][0]
+                self.assertTrue(item["uncertain"])
+                if apply:
+                    self.assertEqual(finding["action"], "restored")
+                    self.assertEqual(item["link"], restored)
+                else:
+                    self.assertEqual(finding["action"], "suggested")
+                    self.assertEqual(item["link"],
+                                     "https://www.ebay.de/itm/[Telefon]")
+                # A suggested link is the item's own link once a person
+                # accepts it, so it covers the source link (S8″).
+                self.assertNotIn("UNCOVERED_LINK",
+                                 [f["code"] for f in findings])
+
+    def test_infer_must_be_a_bool(self):
+        # 70fb2d9 raises TypeError too, for the unknown keyword. The message is
+        # what proves the flag is checked, so assert on the message.
+        for bad in ("yes", 1):
+            with self.subTest(infer=bad):
+                with self.assertRaisesRegex(TypeError,
+                                            "infer must be a bool"):
+                    G.ground({"items": []}, "", infer=bad)
+
+    def test_a_non_string_key_in_a_variant_line_raises_nothing(self):
+        # N2″: the merge must not crash on a key it cannot write.
+        extraction = {"items": [{"part_number": "AC-44170", "quantity": 20},
+                                {"part_number": "AC-44170", 1: "x"}]}
+        source = "AC-44170 Schraube, 20 Stück\n"
+        for apply in (False, True):
+            for infer in (False, True):
+                with self.subTest(apply=apply, infer=infer):
+                    _checked, findings = G.ground(
+                        extraction, source, apply=apply, infer=infer)
+                    self.assertIsInstance(findings, list)
+
+    def test_infer_true_keeps_the_owner_and_quantity_inference(self):
+        # The README example, and the extraction of
+        # examples/grounding_example.py: a set line with its pack marker and a
+        # GTIN the extractor dropped.
+        extraction = {"items": [{
+            "quantity": 12,
+            "unit": "piece",
+            "description": "Cordless impact driver 18 V 4-pack",
+            "part_number": "AC-9999",
+        }]}
+        source = ("Example Tool Supply - order request\n"
+                  "Cordless impact driver 18 V 4-pack, part AC-4417, "
+                  "GTIN 2000000000008\n"
+                  "quantity: 3 x 4\n")
+        _checked, findings = G.ground(extraction, source, infer=True)
+        actions = {f["code"]: f["action"] for f in findings}
+        self.assertEqual(actions["SET_MULTIPLIED"], "suggested")
+        self.assertEqual(actions["MISSING_GTIN"], "suggested")
+        checked, findings = G.ground(extraction, source, infer=True,
+                                     apply=True)
+        actions = {f["code"]: f["action"] for f in findings}
+        self.assertEqual(actions["SET_MULTIPLIED"], "corrected")
+        self.assertEqual(actions["MISSING_GTIN"], "attached")
+        self.assertEqual(checked["items"][0]["quantity"], 3)
+        self.assertEqual(checked["items"][0]["unit"], "set")
+        self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
+
+
 if __name__ == "__main__":
     unittest.main()
