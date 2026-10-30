@@ -32,6 +32,10 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 CASES_PATH = os.path.join(HERE, "cases.json")
 RESULTS_PATH = os.path.join(HERE, "RESULTS.md")
@@ -148,9 +152,9 @@ def score_case(case):
     lets it write. The finding codes are the default's, because that is the run
     a caller who passes no flag gets.
     """
-    _suggested, findings = G.ground(case["extractor_output"],
+    _suggested, findings = ground_infer(case["extractor_output"],
                                     case["source_text"])
-    checked, _written = G.ground(case["extractor_output"], case["source_text"],
+    checked, _written = ground_infer(case["extractor_output"], case["source_text"],
                                  apply=True)
     return {
         "id": case["id"],

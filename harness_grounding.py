@@ -942,7 +942,7 @@ def _marketplace_of(host):
     return None
 
 
-def ground(extraction, source_text, *, apply=False):
+def ground(extraction, source_text, *, apply=False, infer=False):
     """Check extraction against source_text. Return (checked, findings).
 
     checked is a deep copy of extraction with flags and attachments applied.
@@ -983,6 +983,9 @@ def ground(extraction, source_text, *, apply=False):
     if not isinstance(apply, bool):
         raise TypeError("apply must be a bool, not %s"
                         % type(apply).__name__)
+    if not isinstance(infer, bool):
+        raise TypeError("infer must be a bool, not %s"
+                        % type(infer).__name__)
 
     checked = copy.deepcopy(extraction)
     items = checked.setdefault("items", [])
@@ -995,12 +998,17 @@ def ground(extraction, source_text, *, apply=False):
     # item. Every finding recorded after it therefore carries an index that is
     # still valid in the final list. UNGROUNDED_ID runs before any item is
     # appended, so an item this module adds is never flagged against itself.
-    findings.extend(_check_variant_split(items, origins))
+    findings.extend(_check_variant_split(items, origins, infer))
     findings.extend(_check_ids(items, origins, source_text))
-    findings.extend(_check_redacted_links(items, origins, source_text))
-    findings.extend(_check_uncovered_links(items, origins, source_text, apply))
-    findings.extend(_check_set_multiplied(items, origins, source_text, apply))
-    findings.extend(_check_missing_gtins(items, origins, source_text, apply))
+    redacted = _check_redacted_links(items, origins, source_text, apply)
+    findings.extend(redacted)
+    # A link REDACTED_LINK suggests is the item's own link once a person accepts
+    # it, so it covers that source link: no placeholder repeats the item.
+    suggested = [f["new_value"] for f in redacted if f["action"] == "suggested"]
+    findings.extend(_check_uncovered_links(items, origins, source_text, apply, infer,
+                                           suggested))
+    findings.extend(_check_set_multiplied(items, origins, source_text, apply, infer))
+    findings.extend(_check_missing_gtins(items, origins, source_text, apply, infer))
     return checked, findings
 
 
@@ -1093,7 +1101,7 @@ def _check_ids(items, origins, source_text):
     return findings
 
 
-def _check_redacted_links(items, origins, source_text):
+def _check_redacted_links(items, origins, source_text, apply):
     """REDACTED_LINK: put back a product link that a redaction cut in two.
 
     A redaction pass that protects phone numbers can hit a long digit run in a
@@ -1151,9 +1159,10 @@ def _check_redacted_links(items, origins, source_text):
             continue
 
         candidate = matches[0]
-        item["link"] = candidate
+        if apply:
+            item["link"] = candidate
         findings.append(_finding(
-            "REDACTED_LINK", "restored",
+            "REDACTED_LINK", "restored" if apply else "suggested",
             evidence="item link %s was cut at character %d by a "
                      "redaction placeholder; exactly one source link "
                      "matches the text before and after it: %s"
@@ -1187,7 +1196,7 @@ def _quote(text, limit=QUOTE_LIMIT):
     return text[:limit - 1].rstrip() + "\u2026"
 
 
-def _check_uncovered_links(items, origins, source_text, apply):
+def _check_uncovered_links(items, origins, source_text, apply, infer, suggested=()):
     """UNCOVERED_LINK: add an item for a product link that no item covers.
 
     A product link in the source is a position the extractor missed. The item
@@ -1222,7 +1231,8 @@ def _check_uncovered_links(items, origins, source_text, apply):
     form_lengths = set()
     for link in links:
         form_lengths.update(len(form) for form in _link_id_forms(link["link_id"]))
-    covered_urls, covered_forms = _link_coverage(items, form_lengths)
+    covered_urls, covered_forms = _link_coverage(
+        list(items) + [{"link": url} for url in suggested], form_lengths)
     quotes = {}
     for link in links:
         url = link["url"]
@@ -1233,15 +1243,16 @@ def _check_uncovered_links(items, origins, source_text, apply):
             continue
         if link["line_index"] not in quotes:
             quotes[link["line_index"]] = _quote(link["line"])
-        found = _link_quantity(lines, link["line_index"], link["segment"],
-                               link["first_on_line"], link["only_on_line"])
+        found = (_link_quantity(lines, link["line_index"], link["segment"],
+                                link["first_on_line"], link["only_on_line"])
+                 if infer else None)
         quantity, unit = found if found is not None else (None, APPENDED_UNIT)
         appended = {
             "other_ids": [link["link_id"]],
             "link": url,
             "uncertain": True,
         }
-        if apply:
+        if apply and infer:
             appended["quantity"] = quantity
             appended["unit"] = unit
         items.append(appended)
@@ -1341,7 +1352,7 @@ def _add_flat_forms(forms, value, form_lengths):
             forms.add(flat[start:start + length])
 
 
-def _check_set_multiplied(items, origins, source_text, apply):
+def _check_set_multiplied(items, origins, source_text, apply, infer):
     """SET_MULTIPLIED: an M-pack ordered N times is N sets, not N*M pieces.
 
     The source writes "quantity: 28 x 5" for 28 sets of 5. An extractor that
@@ -1389,6 +1400,7 @@ def _check_set_multiplied(items, origins, source_text, apply):
     """
     findings = []
     corrected = set()
+    reported_sets = set()
     bodies, starts = _source_lines(source_text)
     if not bodies:
         return findings
@@ -1457,6 +1469,19 @@ def _check_set_multiplied(items, origins, source_text, apply):
                 item = items[item_index]
                 if _quantity_of(item) != product:
                     continue
+                if not infer:
+                    if (line_index, match.start()) not in reported_sets:
+                        reported_sets.add((line_index, match.start()))
+                        findings.append(_finding(
+                            "SET_MULTIPLIED", "reported",
+                            evidence="source says \"%s\": %d sets of %d, and "
+                                     "an item holds %d; which item the line "
+                                     "belongs to is not inferred, so nothing "
+                                     "is changed"
+                                     % (_quote(match.group(0)), outer, pack,
+                                        product),
+                            field="quantity"))
+                    break
                 old = item.get("quantity")
                 old_unit = item.get("unit")
                 item["uncertain"] = True
@@ -1482,7 +1507,7 @@ def _check_set_multiplied(items, origins, source_text, apply):
     return findings
 
 
-def _check_variant_split(items, origins):
+def _check_variant_split(items, origins, infer):
     """VARIANT_SPLIT: fold a variant line back into the item it belongs to.
 
     A supplier lists one part number twice, once per variant, under one
@@ -1539,6 +1564,22 @@ def _check_variant_split(items, origins):
         pairs.append((index, survivor_for[number]))
     if not pairs:
         return []
+    if not infer:
+        findings = []
+        for index, first_index in pairs:
+            items[index]["uncertain"] = True
+            findings.append(_finding(
+                "VARIANT_SPLIT", "flagged",
+                evidence="items %d and %d share part number %s and item %d "
+                         "has no quantity of its own: a variant line or a "
+                         "second position; nothing is merged"
+                         % (first_index, index,
+                            normalize_id(items[index].get("part_number")), index),
+                field="part_number",
+                old_value=items[index].get("part_number"),
+                item_index=index,
+                input_index=origins[index]))
+        return findings
 
     input_of = list(origins)
     merges = []
@@ -1667,7 +1708,7 @@ def _merge_blocking_value(survivor, variant):
     if _carries_data(theirs) and not isinstance(theirs, str):
         if normalize_id(theirs) != normalize_id(survivor.get("gtin")):
             return "gtin", theirs
-    for key in sorted(variant):
+    for key in sorted(variant, key=str):
         if key in _MERGE_KEYS:
             continue
         value = variant[key]
@@ -1829,7 +1870,7 @@ def _alnum_bounds(line):
     return (first, last)
 
 
-def _check_missing_gtins(items, origins, source_text, apply):
+def _check_missing_gtins(items, origins, source_text, apply, infer):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
 
     The attachment is written only with apply=True. With apply=False the finding
@@ -1923,6 +1964,16 @@ def _check_missing_gtins(items, origins, source_text, apply):
                 neighbour = lines[line_index + 1].strip()
         if line_index not in quotes:
             quotes[line_index] = _quote(line)
+        if not infer:
+            carried.add(form)
+            findings.append(_finding(
+                "MISSING_GTIN", "reported",
+                evidence="GTIN %s: %s (no item of the extraction carries it; "
+                         "which item it belongs to is not inferred)"
+                         % (gtin, quotes[line_index]) if line else
+                         "GTIN %s occurs in the source text" % gtin,
+                field="gtin"))
+            continue
         key = (line_index, bare)
         if key in owners:
             index, note = owners[key]

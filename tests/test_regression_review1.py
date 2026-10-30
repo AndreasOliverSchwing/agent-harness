@@ -33,6 +33,10 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 A = "https://www.amazon.de/dp/B0TESTAAA1"
 B = "https://www.amazon.de/dp/B0TESTAAA2"
@@ -46,13 +50,13 @@ def gtin(body):
 
 def write(items, source):
     """ground() in write mode: the mode that corrects and attaches."""
-    checked, findings = G.ground({"items": items}, source, apply=True)
+    checked, findings = ground_infer({"items": items}, source, apply=True)
     return checked["items"], findings
 
 
 def plain(items, source):
     """ground() in the default mode: it only suggests."""
-    checked, findings = G.ground({"items": items}, source)
+    checked, findings = ground_infer({"items": items}, source)
     return checked["items"], findings
 
 
@@ -398,7 +402,7 @@ class ReviewOneTest(unittest.TestCase):
         items = [{"link": "https://de.aliexpress.com/item/1005[Telefon]234567.html"
                           "?spm=a2g0o.detail", "quantity": 1}]
         src = "1x https://de.aliexpress.com/item/1005001234567.html?spm=a2g0o.detail"
-        out, fs = plain(items, src)
+        out, fs = write(items, src)
         red = codes(fs, "REDACTED_LINK")
         self.assertTrue(red)
         self.assertEqual(red[0]["action"], "restored")

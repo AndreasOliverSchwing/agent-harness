@@ -67,6 +67,10 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 A = "https://www.amazon.de/dp/B0TESTAAA1"
 
@@ -138,7 +142,7 @@ class SecondReviewInputTest(unittest.TestCase):
                   "AC-44170 Kabelbinder wei\u00df, 6 Packungen \u00e0 2er-Pack\n")
         for apply in (False, True):
             with self.subTest(apply=apply):
-                checked, findings = G.ground(extraction, source, apply=apply)
+                checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual(findings, [], "apply=%s" % apply)
                 self.assertEqual(checked["items"][0]["quantity"], 3)
                 self.assertEqual(checked["items"][1]["quantity"], 6)
@@ -169,7 +173,7 @@ class SecondReviewInputTest(unittest.TestCase):
         # The default suggests only: NW-22010's 6 pieces would be 3 sets, and
         # AC-44170 gets no finding at all. NW-22010's part number is not in the
         # source, so its UNGROUNDED_ID stands above the suggestion.
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual(_codes(findings), ["UNGROUNDED_ID", "SET_MULTIPLIED"])
         suggestion = findings[1]
         self.assertEqual(suggestion["action"], "suggested")
@@ -183,7 +187,7 @@ class SecondReviewInputTest(unittest.TestCase):
                          ["piece", "piece"])
 
         # apply=True writes the one correction and leaves AC-44170 alone.
-        checked, findings = G.ground(extraction, source, apply=True)
+        checked, findings = ground_infer(extraction, source, apply=True)
         self.assertEqual(_codes(findings), ["UNGROUNDED_ID", "SET_MULTIPLIED"])
         correction = findings[1]
         self.assertEqual(correction["action"], "corrected")
@@ -210,17 +214,17 @@ class SecondReviewInputTest(unittest.TestCase):
                   "Menge: 4 x 2\n")
         for apply in (False, True):
             with self.subTest(apply=apply):
-                checked, findings = G.ground(extraction, source, apply=apply)
+                checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual(_codes(findings), ["UNGROUNDED_ID"],
                                  "apply=%s" % apply)
                 self.assertEqual(checked["items"][0]["quantity"], 8)
                 self.assertEqual(checked["items"][0]["unit"], "piece")
 
         contiguous = source.replace("AC-4417, 8", "AC-44178, 8")
-        checked, findings = G.ground(extraction, contiguous)
+        checked, findings = ground_infer(extraction, contiguous)
         self.assertEqual(_codes(findings), ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 8)
-        checked, findings = G.ground(extraction, contiguous, apply=True)
+        checked, findings = ground_infer(extraction, contiguous, apply=True)
         self.assertEqual(_codes(findings), ["SET_MULTIPLIED"])
         self.assertEqual(checked["items"][0]["quantity"], 4)
 
@@ -235,12 +239,12 @@ class SecondReviewInputTest(unittest.TestCase):
         source = "Bitte 1x https://www.amazon.de/dp/B0TESTAAA1\n"
         for apply in (False, True):
             with self.subTest(apply=apply):
-                checked, findings = G.ground(extraction, source, apply=apply)
+                checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual(_codes(findings), ["REDACTED_LINK"],
                                  "apply=%s" % apply)
-                self.assertEqual(findings[0]["action"], "restored",
+                self.assertEqual(findings[0]["action"], "restored" if apply else "suggested",
                                  "apply=%s" % apply)
-                self.assertEqual(checked["items"][0]["link"], A)
+                self.assertEqual(checked["items"][0]["link"] if apply else findings[0]["new_value"], A)
 
 
 class RealisticGermanMailTest(unittest.TestCase):
@@ -321,7 +325,7 @@ Tel. +49 89 12345670 \u00b7 USt-IdNr. DE 123 456 789
 
     def test_the_mail_reads_the_same_in_both_modes(self):
         # The default mode: it suggests the two writes and makes neither.
-        checked, findings = G.ground(self.EXTRACTION, self.SOURCE)
+        checked, findings = ground_infer(self.EXTRACTION, self.SOURCE)
         items = checked["items"]
         self.assertEqual(_codes(findings),
                          ["UNGROUNDED_ID", "UNCOVERED_LINK", "UNCOVERED_LINK",
@@ -374,7 +378,7 @@ Tel. +49 89 12345670 \u00b7 USt-IdNr. DE 123 456 789
             self.assertNotIn("gtin", item, "item %d took a GTIN" % index)
 
     def test_the_mail_writes_the_same_two_values_with_apply(self):
-        checked, findings = G.ground(self.EXTRACTION, self.SOURCE, apply=True)
+        checked, findings = ground_infer(self.EXTRACTION, self.SOURCE, apply=True)
         items = checked["items"]
         self.assertEqual(_codes(findings),
                          ["UNGROUNDED_ID", "UNCOVERED_LINK", "SET_MULTIPLIED"])
@@ -486,7 +490,7 @@ class ShapeCostTest(unittest.TestCase):
         for name, (source, extraction) in shapes.items():
             with self.subTest(shape=name):
                 started = time.perf_counter()
-                G.ground(extraction, source)
+                ground_infer(extraction, source)
                 elapsed = time.perf_counter() - started
                 self.assertLess(elapsed, self.BOUND_SECONDS,
                                 "%s took %.3f s on %d bytes"
@@ -538,7 +542,7 @@ class FindLinksCostTest(unittest.TestCase):
                         "find_links took %.3f s on %d links"
                         % (elapsed, len(found)))
         started = time.perf_counter()
-        G.ground({"items": [{"part_number": "AC-44170", "quantity": 8}]},
+        ground_infer({"items": [{"part_number": "AC-44170", "quantity": 8}]},
                  source + "\nMenge: 4 x 2\n")
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, self.BOUND_SECONDS,
@@ -555,7 +559,7 @@ class FindLinksCostTest(unittest.TestCase):
                         "find_links took %.3f s on %d links"
                         % (elapsed, len(found)))
         started = time.perf_counter()
-        G.ground({"items": [{"part_number": "AC-44170", "quantity": 8}]},
+        ground_infer({"items": [{"part_number": "AC-44170", "quantity": 8}]},
                  source + "\nMenge: 4 x 2\n")
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, self.BOUND_SECONDS,
@@ -593,7 +597,7 @@ class LineFormCostReview2Test(unittest.TestCase):
     def test_the_probes_shape_is_fast_and_small(self):
         source, extraction = self._source_and_extraction()
         (checked, findings), elapsed, peak = _measure(
-            lambda: G.ground(extraction, source))
+            lambda: ground_infer(extraction, source))
         # The 64-character id occurs nowhere in the source, so the id scan has
         # real work to do: it may not pass by finding nothing. The set line
         # above the token line owns no item, so it corrects nothing.
@@ -633,7 +637,7 @@ class LinksBlowupCostTest(unittest.TestCase):
         source = self._source()
         self.assertEqual(len(source.encode()), 98909)
         (checked, findings), elapsed, peak = _measure(
-            lambda: G.ground({"items": []}, source))
+            lambda: ground_infer({"items": []}, source))
         # Only the 9 to 13 digit runs are marketplace ids, so the check has real
         # work to do: it may not pass by finding nothing.
         self.assertEqual(len(findings), 5)

@@ -31,6 +31,10 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 KEYS = {"code", "action", "field", "old_value", "new_value",
         "item_index", "input_index", "evidence"}
@@ -53,13 +57,13 @@ EAN8 = gtin("2001234")
 
 def write(items, source):
     """ground() in write mode: the mode that corrects and attaches."""
-    checked, findings = G.ground({"items": items}, source, apply=True)
+    checked, findings = ground_infer({"items": items}, source, apply=True)
     return checked["items"], findings
 
 
 def plain(items, source):
     """ground() in the default mode: it only suggests."""
-    checked, findings = G.ground({"items": items}, source)
+    checked, findings = ground_infer({"items": items}, source)
     return checked["items"], findings
 
 
@@ -128,7 +132,7 @@ class QaReplayTest(unittest.TestCase):
                  {"link": "https://www.ebay.de/itm/1[Telefon]02101", "quantity": 1}]
         src = ("Artikel 1: https://www.ebay.de/itm/123456789001 2 Stück\n"
                "Artikel 2: https://www.ebay.de/itm/198765402101 1 Stück")
-        out, fs = plain(items, src)
+        out, fs = write(items, src)
         self.assertEqual(out[1].get("link"), "https://www.ebay.de/itm/198765402101")
         self.assertIs(out[1].get("uncertain"), True)
         self.assertEqual(codes(fs, "UNCOVERED_LINK"), [])
@@ -381,7 +385,7 @@ class QaReplayTest(unittest.TestCase):
                  ("None source", {"items": []}, None))
         for name, extraction, source in cases:
             with self.assertRaises(TypeError, msg=name):
-                G.ground(extraction, source)
+                ground_infer(extraction, source)
 
     # ── QA 14 ───────────────────────────────────────────────────────────────
 

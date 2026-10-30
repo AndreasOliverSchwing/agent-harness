@@ -33,6 +33,10 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 
 def ground_write(*args, **kwargs):
@@ -44,7 +48,8 @@ def ground_write(*args, **kwargs):
     bench/grounding/run.py.
     """
     kwargs.setdefault("apply", True)
-    return G.ground(*args, **kwargs)
+    kwargs.setdefault("infer", True)
+    return ground_infer(*args, **kwargs)
 
 
 RUN_PATH = os.path.join(REPO, "bench", "grounding", "run.py")

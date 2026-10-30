@@ -31,6 +31,10 @@ from decimal import Decimal
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import harness_grounding as G  # noqa: E402
+import functools  # noqa: E402
+# The owner and quantity inference is opt-in (release gate, round 4).
+ground_infer = functools.partial(G.ground, infer=True)
+
 
 
 def ground_write(*args, **kwargs):
@@ -40,10 +44,11 @@ def ground_write(*args, **kwargs):
     quantity it corrects, the GTIN it attaches, the item it appends with a
     quantity. Those three checks only write with apply=True now, so those tests
     pass the flag and keep their assertions unchanged. A test of the default
-    calls G.ground() directly; see SuggestOnlyDefaultTest.
+    calls ground_infer() directly; see SuggestOnlyDefaultTest.
     """
     kwargs.setdefault("apply", True)
-    return G.ground(*args, **kwargs)
+    kwargs.setdefault("infer", True)
+    return ground_infer(*args, **kwargs)
 
 
 def _measure(call):
@@ -416,7 +421,7 @@ class VerbatimIdTest(unittest.TestCase):
     def _assert_grounded(self, part_number, source):
         extraction = {"items": [{"part_number": part_number}]}
         for apply in (False, True):
-            checked, findings = G.ground(extraction, source, apply=apply)
+            checked, findings = ground_infer(extraction, source, apply=apply)
             self.assertEqual(findings, [], "%s apply=%s" % (part_number, apply))
             self.assertNotIn("uncertain", checked["items"][0],
                              "%s apply=%s" % (part_number, apply))
@@ -449,7 +454,7 @@ class VerbatimIdTest(unittest.TestCase):
         for joiner in ("\u2212", "\uff0d"):
             source = "Pos. 1: 2 St\u00fcck AC%s44170 Schraube" % joiner
             for apply in (False, True):
-                checked, findings = G.ground(extraction, source, apply=apply)
+                checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual(findings, [], "%r apply=%s" % (joiner, apply))
                 self.assertNotIn("uncertain", checked["items"][0],
                                  "%r apply=%s" % (joiner, apply))
@@ -461,7 +466,7 @@ class VerbatimIdTest(unittest.TestCase):
         for char in ("\u2060", "\ufeff"):
             source = "Pos. 1: 2 St\u00fcck AC%s44170 Schraube" % char
             for apply in (False, True):
-                checked, findings = G.ground(extraction, source, apply=apply)
+                checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual(findings, [], "%r apply=%s" % (char, apply))
                 self.assertNotIn("uncertain", checked["items"][0],
                                  "%r apply=%s" % (char, apply))
@@ -471,7 +476,7 @@ class VerbatimIdTest(unittest.TestCase):
         # writes "3x1,55", not "3x1,5".
         extraction = {"items": [{"part_number": "NYM-J 3x1,5"}]}
         for apply in (False, True):
-            checked, findings = G.ground(
+            checked, findings = ground_infer(
                 extraction, "Pos. 1: 50 m Mantelleitung NYM-J 3x1,55 grau",
                 apply=apply)
             self.assertEqual([f["code"] for f in findings], ["UNGROUNDED_ID"],
@@ -638,7 +643,7 @@ class GroundMissingGtinTest(unittest.TestCase):
                                  "description": "Kabelbinder 200 mm schwarz",
                                  "quantity": 8}]}
         for apply in (False, True):
-            checked, findings = G.ground(extraction, source, apply=apply)
+            checked, findings = ground_infer(extraction, source, apply=apply)
             self.assertEqual([(f["code"], f["action"]) for f in findings],
                              [("MISSING_GTIN", "reported")])
             self.assertIsNone(findings[0]["item_index"])
@@ -655,7 +660,7 @@ class GroundMissingGtinTest(unittest.TestCase):
                   "EAN 2000000000015")
         extraction = {"items": [{"description": "Profilzylinder 30/30 mm"}]}
         for apply in (False, True):
-            checked, findings = G.ground(extraction, source, apply=apply)
+            checked, findings = ground_infer(extraction, source, apply=apply)
             self.assertEqual(
                 [(f["code"], f["action"]) for f in findings],
                 [("MISSING_GTIN", "attached" if apply else "suggested")])
@@ -896,7 +901,7 @@ class GtinNumberLabelTest(unittest.TestCase):
 
     def _assert_label_names_the_gtin(self, label):
         source = self._source(label)
-        checked, findings = G.ground(self.ITEMS, source)
+        checked, findings = ground_infer(self.ITEMS, source)
         self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"], label)
         self.assertEqual(findings[0]["action"], "suggested", label)
         self.assertEqual(findings[0]["field"], "gtin", label)
@@ -905,7 +910,7 @@ class GtinNumberLabelTest(unittest.TestCase):
         self.assertNotIn("gtin", checked["items"][0], label)
         self.assertTrue(checked["items"][0]["uncertain"], label)
 
-        checked, findings = G.ground(self.ITEMS, source, apply=True)
+        checked, findings = ground_infer(self.ITEMS, source, apply=True)
         self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"], label)
         self.assertEqual(findings[0]["action"], "attached", label)
         self.assertEqual(findings[0]["new_value"], "2000000000015", label)
@@ -977,7 +982,7 @@ class GtinNeighbourTest(unittest.TestCase):
         # position below it. The wrong attachment card 3.4 fixed stays fixed:
         # G2 never goes to AC-44170 (S9'a follow-up).
         for apply in (False, True):
-            checked, findings = G.ground(self.ABOVE_ITEMS, self.ABOVE_SOURCE,
+            checked, findings = ground_infer(self.ABOVE_ITEMS, self.ABOVE_SOURCE,
                                          apply=apply)
             self.assertEqual([f["code"] for f in findings],
                              ["MISSING_GTIN", "MISSING_GTIN"], "apply=%s" % apply)
@@ -1001,7 +1006,7 @@ class GtinNeighbourTest(unittest.TestCase):
 
     def test_a_gtin_on_a_line_that_describes_another_item_is_reported(self):
         for apply in (False, True):
-            checked, findings = G.ground(self.PASSING_ITEMS, self.PASSING_SOURCE,
+            checked, findings = ground_infer(self.PASSING_ITEMS, self.PASSING_SOURCE,
                                          apply=apply)
             self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"],
                              "apply=%s" % apply)
@@ -1025,7 +1030,7 @@ class GtinNeighbourTest(unittest.TestCase):
         items = {"items": [{"part_number": "AC-44170",
                             "description": "Sechskantschraube M8"}]}
         for apply in (False, True):
-            checked, findings = G.ground(items, source, apply=apply)
+            checked, findings = ground_infer(items, source, apply=apply)
             self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"],
                              "apply=%s" % apply)
             self.assertEqual(findings[0]["item_index"], 0, "apply=%s" % apply)
@@ -1105,7 +1110,7 @@ class GtinLayoutTest(unittest.TestCase):
         is the gtin field of each item after apply=True.
         """
         for apply in (False, True):
-            checked, findings = G.ground(copy.deepcopy(items), source,
+            checked, findings = ground_infer(copy.deepcopy(items), source,
                                          apply=apply)
             label = "apply=%s" % apply
             self.assertEqual([f["code"] for f in findings],
@@ -1761,7 +1766,7 @@ class MarketplaceLinkCostTest(unittest.TestCase):
         # quantity, because no line carries one; apply=True writes no quantity
         # either.
         (checked, findings), elapsed, peak = _measure(
-            lambda: G.ground({"items": []}, source))
+            lambda: ground_infer({"items": []}, source))
         self.assertEqual([finding["action"] for finding in findings],
                          ["added"] * 5)
         self.assertEqual([item.get("quantity") for item in checked["items"]],
@@ -1819,7 +1824,7 @@ class LineFormCostTest(unittest.TestCase):
         # Both modes. The default suggests the same correction and writes
         # nothing; apply=True writes it.
         (checked, findings), elapsed, peak = _measure(
-            lambda: G.ground(extraction, source))
+            lambda: ground_infer(extraction, source))
         self.assertEqual([finding["action"] for finding in findings],
                          ["suggested"])
         self.assertEqual(findings[0]["new_value"], 4)
@@ -1990,7 +1995,7 @@ class UncoveredLinkQuantityTest(unittest.TestCase):
 
     def _quantities(self, source, apply):
         """Return one quantity per appended item, read from that mode's output."""
-        checked, findings = G.ground({"items": []}, source, apply=apply)
+        checked, findings = ground_infer({"items": []}, source, apply=apply)
         if apply:
             return [item.get("quantity") for item in checked["items"]]
         return [finding["new_value"] for finding in findings
@@ -2048,7 +2053,7 @@ class UncoveredLinkUnitTest(unittest.TestCase):
 
     def _read(self, source, apply):
         """Return (appended items, suggested findings) for one mode."""
-        checked, findings = G.ground({"items": []}, source, apply=apply)
+        checked, findings = ground_infer({"items": []}, source, apply=apply)
         return checked["items"], [f for f in findings
                                   if f["action"] == "suggested"]
 
@@ -2112,7 +2117,7 @@ class MissingGtinEvidenceTest(unittest.TestCase):
         extraction = {"items": [{"description": "Sechskantschraube M8"}]}
         for apply in (False, True):
             with self.subTest(apply=apply):
-                _checked, findings = G.ground(extraction, line, apply=apply)
+                _checked, findings = ground_infer(extraction, line, apply=apply)
                 self.assertEqual([f["code"] for f in findings],
                                  ["MISSING_GTIN"])
                 finding = findings[0]
@@ -2146,7 +2151,7 @@ class EvidenceLengthTest(unittest.TestCase):
                                  "unit": "piece"}]}
         for apply in (False, True):
             with self.subTest(apply=apply):
-                _checked, findings = G.ground(extraction, source, apply=apply)
+                _checked, findings = ground_infer(extraction, source, apply=apply)
                 self.assertEqual([f["code"] for f in findings],
                                  ["SET_MULTIPLIED"])
                 evidence = findings[0]["evidence"]
@@ -2160,9 +2165,9 @@ class EvidenceLengthTest(unittest.TestCase):
                                  "link": path + "[Telefon]" + "b" * 10}]}
         for apply in (False, True):
             with self.subTest(apply=apply):
-                _checked, findings = G.ground(extraction, source, apply=apply)
+                _checked, findings = ground_infer(extraction, source, apply=apply)
                 restored = [f for f in findings if f["code"] == "REDACTED_LINK"]
-                self.assertEqual([f["action"] for f in restored], ["restored"])
+                self.assertEqual([f["action"] for f in restored], ["restored" if apply else "suggested"])
                 evidence = restored[0]["evidence"]
                 # Two quotes, each capped at 200 characters, plus the fixed
                 # sentence: neither the cut link nor the candidate may carry
@@ -2366,14 +2371,14 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = "Pos. 1: Kabelbinder 5er-Pack %s\nMenge: 28 x 5" % link
         extraction = {"items": [{"link": link, "quantity": 140}]}
 
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "suggested")
         self.assertEqual(findings[0]["old_value"], 140)
         self.assertEqual(findings[0]["new_value"], 28)
         self.assertEqual(checked["items"][0]["quantity"], 140)
 
-        checked, findings = G.ground(extraction, source, apply=True)
+        checked, findings = ground_infer(extraction, source, apply=True)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "corrected")
         self.assertEqual(checked["items"][0]["quantity"], 28)
@@ -2636,7 +2641,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
                   "Bestellmenge: 4 x 2\n"
                   "Liefermenge: 4 x 2\n"
                   "Pos. 2: NW-22010 Kabelbinder 200 mm, 2er-Pack, 8 St\u00fcck")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "suggested")
         self.assertEqual(findings[0]["item_index"], 0)
@@ -2687,7 +2692,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("Pos. 1: NW-22010 Kabelbinder 200 mm, 2er-Pack, 8 St\u00fcck\n"
                   "Pos. 2: AC-44170 Sechskantschraube M8, 2er-Pack, "
                   "Menge: 4 x 2")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 8)
         self.assertEqual(checked["items"][1]["quantity"], "4 x 2")
@@ -2713,7 +2718,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("Pos. 1: NW-22010 Kabelbinder 200 mm, 2er-Pack, "
                   "Menge: 4 x 2\n"
                   "Pos. 2: Kabelbinder schwarz, 2er-Pack, 8 St\u00fcck")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual(findings, [])
         self.assertEqual(checked["items"][0]["quantity"], 4)
         self.assertEqual(checked["items"][1]["quantity"], 8)
@@ -2736,7 +2741,7 @@ class GroundSetMultipliedTest(unittest.TestCase):
         source = ("AC-44170 Schraube 2er-Pack, 8 St\u00fcck "
                   "https://www.amazon.de/dp/B0TESTAAA1\n"
                   "Menge: 4 x 2\n")
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         set_findings = [f for f in findings if f["code"] == "SET_MULTIPLIED"]
         self.assertEqual([f["item_index"] for f in set_findings], [0])
         self.assertEqual(checked["items"][1].get("quantity"), None)
@@ -3046,7 +3051,7 @@ class VariantMergeLossTest(unittest.TestCase):
     SOURCE = "Acme Tools\nPos. 1: AC-44170 Schraube M8, 4 St\u00fcck\n"
 
     def _assert_blocked(self, extraction, field, variant_value):
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_infer(extraction, self.SOURCE)
         self.assertEqual(len(checked["items"]), 2)
         self.assertEqual(checked["items"][1].get(field), variant_value)
         self.assertNotIn("note", checked["items"][0])
@@ -3096,7 +3101,7 @@ class VariantMergeLossTest(unittest.TestCase):
             {"part_number": "AC-44170", "quantity": 4, "colour": "silber"},
             {"part_number": "AC-44170", "colour": "Silber"},
         ]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_infer(extraction, self.SOURCE)
         self.assertEqual(len(checked["items"]), 1)
         self.assertEqual(checked["items"][0]["colour"], "silber")
         self.assertEqual([f["action"] for f in findings], ["merged"])
@@ -3110,7 +3115,7 @@ class VariantMergeLossTest(unittest.TestCase):
              "note": "Lieferung KW 45"},
             {"part_number": "AC-44170", "description": "Schraube M8 silber"},
         ]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_infer(extraction, self.SOURCE)
         note = [f for f in findings if f["field"] == "note"]
         self.assertEqual(len(note), 1)
         self.assertEqual(note[0]["old_value"], "Lieferung KW 45")
@@ -3123,7 +3128,7 @@ class VariantMergeLossTest(unittest.TestCase):
             {"part_number": "AC-44170", "quantity": 4},
             {"part_number": "AC-44170", "description": "Schraube M8 silber"},
         ]}
-        _checked, findings = G.ground(extraction, self.SOURCE)
+        _checked, findings = ground_infer(extraction, self.SOURCE)
         note = [f for f in findings if f["field"] == "note"]
         self.assertEqual(len(note), 1)
         self.assertIsNone(note[0]["old_value"])
@@ -3136,7 +3141,7 @@ class VariantMergeLossTest(unittest.TestCase):
             {"part_number": "AC-44170", "description": "Schraube M8 silber",
              "note": "zinc plated"},
         ]}
-        checked, findings = G.ground(extraction, self.SOURCE)
+        checked, findings = ground_infer(extraction, self.SOURCE)
         self.assertEqual(len(checked["items"]), 1)
         self.assertEqual([f["action"] for f in findings], ["merged"])
         self.assertEqual(checked["items"][0]["note"],
@@ -3371,7 +3376,7 @@ class DateIsNotAQuantityTest(unittest.TestCase):
 
     def _assert_no_quantity(self, source):
         # Default mode: nothing is written, so no quantity is suggested.
-        checked, findings = G.ground({"items": []}, source)
+        checked, findings = ground_infer({"items": []}, source)
         self.assertIsNone(checked["items"][0].get("quantity"))
         self.assertEqual(
             [finding for finding in findings if finding["field"] == "quantity"],
@@ -3632,7 +3637,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         return flat
 
     def test_the_default_leaves_a_multiplied_set_as_the_extractor_wrote_it(self):
-        checked, findings = G.ground(self.SET_ITEMS, SET_SOURCE)
+        checked, findings = ground_infer(self.SET_ITEMS, SET_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         finding = findings[0]
         self.assertEqual(finding["action"], "suggested")
@@ -3649,7 +3654,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_apply_true_corrects_the_multiplied_set(self):
-        checked, findings = G.ground(self.SET_ITEMS, SET_SOURCE, apply=True)
+        checked, findings = ground_infer(self.SET_ITEMS, SET_SOURCE, apply=True)
         self.assertEqual([f["code"] for f in findings], ["SET_MULTIPLIED"])
         self.assertEqual(findings[0]["action"], "corrected")
         self.assertEqual(findings[0]["new_value"], 28)
@@ -3657,7 +3662,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         self.assertEqual(checked["items"][0]["unit"], "set")
 
     def test_the_default_leaves_a_missing_gtin_unattached(self):
-        checked, findings = G.ground(self.GTIN_ITEMS, ONE_GTIN_SOURCE)
+        checked, findings = ground_infer(self.GTIN_ITEMS, ONE_GTIN_SOURCE)
         self.assertEqual([f["code"] for f in findings], ["MISSING_GTIN"])
         finding = findings[0]
         self.assertEqual(finding["action"], "suggested")
@@ -3671,12 +3676,12 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         self.assertTrue(checked["items"][0]["uncertain"])
 
     def test_apply_true_attaches_the_missing_gtin(self):
-        checked, findings = G.ground(self.GTIN_ITEMS, ONE_GTIN_SOURCE, apply=True)
+        checked, findings = ground_infer(self.GTIN_ITEMS, ONE_GTIN_SOURCE, apply=True)
         self.assertEqual(findings[0]["action"], "attached")
         self.assertEqual(checked["items"][0]["gtin"], "2000000000008")
 
     def test_the_default_appends_the_link_without_its_quantity(self):
-        checked, findings = G.ground(self.LINK_ITEMS, LINK_SOURCE)
+        checked, findings = ground_infer(self.LINK_ITEMS, LINK_SOURCE)
         # The item, then the quantity it suggests, then the next link.
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK"] * 4)
@@ -3701,7 +3706,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         self.assertTrue(item["uncertain"])
 
     def test_apply_true_appends_the_link_with_its_quantity(self):
-        checked, findings = G.ground(self.LINK_ITEMS, LINK_SOURCE, apply=True)
+        checked, findings = ground_infer(self.LINK_ITEMS, LINK_SOURCE, apply=True)
         self.assertEqual([f["code"] for f in findings],
                          ["UNCOVERED_LINK", "UNCOVERED_LINK"])
         self.assertEqual([f["action"] for f in findings], ["added", "added"])
@@ -3714,8 +3719,8 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         # No item can take this GTIN, so neither mode writes anything and the
         # finding is "reported" in both. The card leaves it unchanged.
         extraction = {"items": [{"description": "Garden hose"}]}
-        default, default_findings = G.ground(extraction, ONE_GTIN_SOURCE)
-        applied, applied_findings = G.ground(extraction, ONE_GTIN_SOURCE,
+        default, default_findings = ground_infer(extraction, ONE_GTIN_SOURCE)
+        applied, applied_findings = ground_infer(extraction, ONE_GTIN_SOURCE,
                                              apply=True)
         self.assertEqual(default, applied)
         self.assertEqual(default_findings, applied_findings)
@@ -3728,7 +3733,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
         source = ("Northwind Supply\n"
                   "4 x Hex bolt M8  EAN 2000000000008  EAN 20000004\n")
         extraction = {"items": [{"description": "Hex bolt M8"}]}
-        checked, findings = G.ground(extraction, source)
+        checked, findings = ground_infer(extraction, source)
         self.assertEqual([f["action"] for f in findings],
                          ["suggested", "reported"])
         self.assertIn("suggestion", findings[1]["evidence"])
@@ -3737,7 +3742,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
     def test_apply_must_be_a_bool(self):
         for bad in ("yes", 1, None, [], {}):
             with self.assertRaises(TypeError) as caught:
-                G.ground({"items": []}, "", apply=bad)
+                ground_infer({"items": []}, "", apply=bad)
             message = str(caught.exception)
             self.assertIn("apply", message)
             self.assertIn(type(bad).__name__, message)
@@ -3745,7 +3750,7 @@ class SuggestOnlyDefaultTest(unittest.TestCase):
     def test_apply_is_keyword_only(self):
         # A third positional argument would be read as a flag by accident.
         with self.assertRaises(TypeError):
-            G.ground({"items": []}, "", True)
+            ground_infer({"items": []}, "", True)
 
 
 if __name__ == "__main__":
