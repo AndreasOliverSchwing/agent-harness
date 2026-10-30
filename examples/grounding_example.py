@@ -9,9 +9,15 @@ The extractor output below is well-formed: every field has the right type, the
 quantity is a number and the part number looks like a part number. It is still
 wrong in three ways. ground() finds all three.
 
-It runs twice. The first run is the default: ground() suggests the values it
-would write and writes nothing, so a producer can show the suggestions to a
-human. The second run passes apply=True and writes them.
+It runs three times, one per level of the contract:
+
+1. the default is flag-only: no check proposes an owner, a quantity or a merge,
+   so SET_MULTIPLIED and MISSING_GTIN report and nothing is written;
+2. apply=True writes only what the default suggests. Here that is a cut link,
+   and this order has none, so the findings are the same as run 1;
+3. infer=True, apply=True adds the owner and quantity inference the release
+   gate (bench/gate) does not clear, so the set is corrected and the GTIN is
+   attached.
 
 Every name, part number and GTIN here is invented. The GTIN uses the GS1
 prefix 2, which is reserved for internal use, so no real product carries it.
@@ -57,6 +63,16 @@ def print_findings(findings):
         print("  %-14s %s" % ("", finding["evidence"]))
 
 
+def run(label, **flags):
+    """Call ground() once, print its findings and the item it returns."""
+    print("\n%s" % label)
+    checked, findings = g.ground(EXTRACTION, SOURCE, **flags)
+    print_findings(findings)
+    print("\nchecked output:")
+    print(json.dumps(checked["items"], indent=2))
+    return checked, findings
+
+
 def main():
     print("source text:")
     for line in SOURCE.splitlines():
@@ -65,20 +81,29 @@ def main():
     print("\nextractor output:")
     print(json.dumps(EXTRACTION, indent=2))
 
-    print("\ndefault mode: ground() suggests, it writes nothing")
-    suggested, suggest_findings = g.ground(EXTRACTION, SOURCE)
-    print_findings(suggest_findings)
-    print("\nchecked output (the extractor's own values):")
-    print(json.dumps(suggested, indent=2))
+    flagged, flag_findings = run(
+        "run 1, default: flag-only, no check proposes a value")
+    applied, apply_findings = run(
+        "run 2, apply=True: writes what the default suggests", apply=True)
+    inferred, infer_findings = run(
+        "run 3, infer=True, apply=True: the inference writes", infer=True,
+        apply=True)
 
-    print("\nwrite mode: ground(..., apply=True) writes what it suggested")
-    checked, findings = g.ground(EXTRACTION, SOURCE, apply=True)
-    print_findings(findings)
-    print("\nchecked output (input left unchanged):")
-    print(json.dumps(checked, indent=2))
-
-    if not suggest_findings or not findings:
+    if not flag_findings or not apply_findings or not infer_findings:
         print("\nno findings: this example is broken", file=sys.stderr)
+        return 1
+    # The default must not write the values runs 2 and 3 write.
+    if flagged["items"][0]["quantity"] != 12:
+        print("\nthe default wrote a quantity: this example is broken",
+              file=sys.stderr)
+        return 1
+    if applied["items"][0].get("gtin") is not None:
+        print("\napply=True inferred a GTIN: this example is broken",
+              file=sys.stderr)
+        return 1
+    if inferred["items"][0]["quantity"] != 3:
+        print("\ninfer=True did not correct the set: this example is broken",
+              file=sys.stderr)
         return 1
     return 0
 

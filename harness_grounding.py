@@ -9,7 +9,8 @@ The job is narrow. An extractor reads a supplier mail or a PDF and returns
 items. This module compares those items against the source text and marks the
 ones the source does not support. It never rewrites a value into something the
 source does not say, and it reports every change it makes. VARIANT_SPLIT is the
-only check that removes an item; it reports the merge.
+only check that removes an item, and it does that only with infer=True; it
+reports the merge.
 
 Data model — plain dicts, no classes, missing keys allowed everywhere.
 
@@ -53,19 +54,26 @@ only when the first group has 1 to 3 digits and every later group has exactly 3
 never a quantity. A value above 10**9 or a
 digit run longer than 12 is not a quantity, so untrusted text cannot raise.
 ground() raises TypeError when extraction is not a dict, when extraction["items"]
-is not a list, when source_text is not a str, or when apply is not a bool.
+is not a list, when source_text is not a str, when apply is not a bool, or when
+infer is not a bool.
 
-ground() only SUGGESTS by default. Three checks would write a value into the
-extraction — SET_MULTIPLIED, MISSING_GTIN and the quantity of an item appended
-for an UNCOVERED_LINK — and each writes it only when the caller passes
-apply=True. With the default apply=False the check records a "suggested"
-finding instead: its new_value is the value apply=True would write, and every
-item keeps exactly the value the caller passed in. Everything those checks do
-that writes no extraction value still happens in both modes: the item is marked
-uncertain, the placeholder item for an uncovered link is appended, and a GTIN
-that no item can take is still reported. A producer that shows a suggestion to a
-human, or that quotes the extraction before a human agrees, calls ground() with
-no flag and reads the finding.
+ground() has three levels. The default writes almost nothing.
+
+    default      no check proposes an owner, a quantity or a merge. MISSING_GTIN
+                 and SET_MULTIPLIED report, VARIANT_SPLIT flags, and the
+                 quantity of an item appended for an UNCOVERED_LINK is not
+                 written. REDACTED_LINK is the exception: it suggests.
+    apply=True   REDACTED_LINK restores the link. Nothing else changes.
+    infer=True   the owner and quantity inference of MISSING_GTIN,
+                 SET_MULTIPLIED, VARIANT_SPLIT and the UNCOVERED_LINK quantity,
+                 which the release gate (bench/gate) does not clear. With
+                 apply=True it writes as before: "attached", "corrected",
+                 "merged", and an "added" item with a quantity and a unit.
+
+In every mode the item is marked uncertain when the source does not support the
+value it holds, the placeholder item for an uncovered link is appended, and a
+GTIN that no item can take is reported. A producer that shows a suggestion to a
+human calls ground() with no flag and reads the finding.
 
 THE FINDING CONTRACT. Every finding from every check carries exactly those
 eight keys and no others. The rules, once, for all six checks:
@@ -119,23 +127,34 @@ Codes and actions in this module:
                                  which folds PDF ligatures (ﬁ is fi). The item
                                  is marked uncertain. field is "gtin" or
                                  "other_ids", new_value the GTIN.
+                                 With infer=True and apply=True only.
     MISSING_GTIN  / "suggested"  the same attachment with apply=False. field and
                                  new_value name the key and the value apply=True
                                  would write, item_index and input_index the item
                                  it would go to. The item is marked uncertain
                                  and keeps its own gtin and other_ids.
-    MISSING_GTIN  / "reported"   same, but no item could take it. The finding
-                                 has item_index None, both value slots None and
-                                 nothing is changed; evidence names the GTIN.
-                                 Every MISSING_GTIN evidence starts with
+                                 With infer=True only.
+    MISSING_GTIN  / "reported"   the default reports every missing GTIN, and it
+                                 is also the result with infer=True when no item
+                                 could take the GTIN. The finding has item_index
+                                 None, both value slots None and nothing is
+                                 changed; evidence names the GTIN. Every
+                                 MISSING_GTIN evidence starts with
                                  "GTIN <number>: ", so the 200-character quote
                                  cut can never drop the number.
-                                 This is the same in both modes.
     REDACTED_LINK / "restored"   an item link was cut by a redaction
                                  placeholder such as "[Telefon]" and exactly
                                  one source link matches the text before and
                                  after the cut. That link is put back and the
                                  item is marked uncertain. field is "link".
+                                 With apply=True only.
+    REDACTED_LINK / "suggested"  the same restoration with apply=False, which is
+                                 the default. field is "link", new_value the
+                                 link apply=True would write, old_value the cut
+                                 link. The item keeps its cut link and is
+                                 marked uncertain. A suggested link covers its
+                                 source link, so no placeholder item is
+                                 appended for it.
     REDACTED_LINK / "flagged"    same cut, but no source link or more than one
                                  matches it. Nothing is rewritten, the item is
                                  marked uncertain and the finding names the cut
@@ -143,18 +162,20 @@ Codes and actions in this module:
     UNCOVERED_LINK / "added"     a product link in the source that no item
                                  covers. A new item is appended and marked
                                  uncertain. field is "link", new_value the link.
-                                 With apply=False the item carries no quantity
-                                 and no unit; the quantity read for the link
-                                 follows as its own "suggested" finding. With
-                                 apply=True it carries the quantity and the
-                                 unit the source names: "piece" for a piece
+                                 By default the item carries no quantity and no
+                                 unit. With infer=True and apply=False the
+                                 quantity read for the link follows as its own
+                                 "suggested" finding. With infer=True and
+                                 apply=True the item carries the quantity and
+                                 the unit the source names: "piece" for a piece
                                  word or no unit word, "set" for set/sets.
     UNCOVERED_LINK / "suggested" the quantity read for that link, with
-                                 apply=False. field is "quantity", old_value
-                                 None, new_value the quantity, item_index the
-                                 appended item, input_index None. It follows the
-                                 "added" finding of its own link directly, and
-                                 its evidence names the unit word apply=True
+                                 infer=True and apply=False. field is
+                                 "quantity", old_value None, new_value the
+                                 quantity, item_index the appended item,
+                                 input_index None. It follows the "added"
+                                 finding of its own link directly, and its
+                                 evidence names the unit word apply=True
                                  writes. Nothing is written.
     SET_MULTIPLIED / "corrected" the source says "N x M" and the item is an
                                  M-pack with quantity N*M, and the set line
@@ -179,10 +200,18 @@ Codes and actions in this module:
                                  short tokens costs no memory. The
                                  quantity becomes N, the unit "set", and the
                                  item is marked uncertain. field is "quantity".
+                                 With infer=True and apply=True only.
     SET_MULTIPLIED / "suggested" the same correction with apply=False. field is
                                  "quantity", old_value the item's quantity,
                                  new_value the N apply=True would write; the
                                  quantity and the unit stay exactly as given.
+                                 With infer=True only.
+    SET_MULTIPLIED / "reported"  the default. The source says "N x M" and an
+                                 item holds a multiplied quantity, but which
+                                 item the set line belongs to is not inferred,
+                                 so nothing is changed. The finding has
+                                 item_index None, both value slots None, and
+                                 evidence quotes the set line.
     VARIANT_SPLIT / "merged"     a later item repeats the part number of an
                                  earlier one and has no quantity of its own. It
                                  is folded into the first item as a variant.
@@ -200,15 +229,20 @@ Codes and actions in this module:
                                  because nothing was written. A unit or a price
                                  is never written and a difference is reported
                                  the same way.
-    VARIANT_SPLIT / "flagged"    a later item repeats the part number of an
-                                 earlier one and has no quantity of its own,
-                                 but the merge would lose a value the survivor
-                                 cannot take: a link that differs in its query
+                                 With infer=True only.
+    VARIANT_SPLIT / "flagged"    the default, and also the result with infer=True
+                                 when the merge would lose a value the survivor
+                                 cannot take. A later item repeats the part
+                                 number of an earlier one and has no quantity
+                                 of its own. Nothing is merged: both items are
+                                 kept, the later one is marked uncertain, and
+                                 item_index equals input_index. field is
+                                 "part_number" in the default, else the
+                                 blocking key: a link that differs in its query
                                  string only, a gtin that is not a string, or a
-                                 key this module does not know. Both items are
-                                 kept and nothing is written. field is the
-                                 blocking key, old_value the value the merge
-                                 would have dropped, new_value None.
+                                 key this module does not know. old_value is
+                                 the value the merge would have dropped,
+                                 new_value None.
 
 A link is a product link only when product_link_id() returns an id for it: a real
 marketplace host, and an id of the length that marketplace uses (an eBay item
@@ -949,20 +983,27 @@ def ground(extraction, source_text, *, apply=False, infer=False):
     The input dict is never modified. findings is a list of finding dicts in a
     stable order; it is empty when the extraction is fully grounded.
 
-    apply selects the mode. With the default apply=False the three checks that
-    would write an extraction value — SET_MULTIPLIED, MISSING_GTIN and the
-    quantity of an item appended for an UNCOVERED_LINK — record a "suggested"
-    finding instead, and every item keeps the value the caller passed in. With
-    apply=True they write the value, as "corrected", "attached" and "added".
-    A "suggested" finding's new_value is the value apply=True would write.
+    The default is flag-only: no check proposes an owner, a quantity or a
+    merge. MISSING_GTIN and SET_MULTIPLIED report, VARIANT_SPLIT flags, and the
+    quantity of an item appended for an UNCOVERED_LINK is not written.
+    REDACTED_LINK still suggests: with the default apply=False its finding
+    carries the link apply=True would write, and the item keeps its cut link.
+    With apply=True it restores that link.
+
+    infer=True adds the owner and quantity inference the release gate
+    (bench/gate) does not clear: MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT
+    and the UNCOVERED_LINK quantity. With apply=False each records a
+    "suggested" finding whose new_value is the value apply=True would write.
+    With apply=True it writes, as "attached", "corrected", "merged" and an
+    "added" item with a quantity and a unit.
 
     A wrong input type raises TypeError. Coercing it would turn a caller's bug
     into an empty, "clean" result: a bare list or a tuple of items would come
     back as {"items": []} with no finding, and bytes as a source would flag
     every id. The arguments are checked, not guessed:
 
-        ground(extraction: dict, source_text: str, *, apply: bool = False)
-              -> (dict, list)
+        ground(extraction: dict, source_text: str, *, apply: bool = False,
+               infer: bool = False) -> (dict, list)
 
     extraction["items"] must be a list when the key is present. A missing
     "items" key is allowed and returns an empty list, because the data model

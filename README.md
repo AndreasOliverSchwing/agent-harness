@@ -146,52 +146,72 @@ for finding in findings:
     print(finding["code"], finding["action"], finding["field"],
           finding["old_value"], "->", finding["new_value"])
 
-# The same run, with the values written instead of suggested.
+# The same run, with apply=True: it writes what the default suggests.
 written, findings = g.ground(extraction, source, apply=True)
+
+# And with infer=True: the owner and quantity inference writes as well.
+inferred, findings = g.ground(extraction, source, infer=True, apply=True)
 ```
 
-That extraction is well-formed and wrong in three ways. The default run writes
-nothing and prints `UNGROUNDED_ID flagged part_number AC-9999 -> None`,
-`SET_MULTIPLIED suggested quantity 12 -> 3` and
-`MISSING_GTIN suggested gtin None -> 2000000000008`; the item keeps quantity 12,
-unit `piece` and no GTIN. Add `apply=True` and the same three findings read
-`corrected` and `attached`, and the checked item holds quantity 3, unit `set` and
-the GTIN. The full runnable version, which prints both runs, is
-`python3 examples/grounding_example.py`.
+That extraction is well-formed and wrong in three ways. The default run is
+flag-only and writes nothing. It prints
+`UNGROUNDED_ID  flagged    part_number AC-9999 -> None`,
+`SET_MULTIPLIED reported   quantity    None -> None` and
+`MISSING_GTIN   reported   gtin        None -> None`; the item keeps quantity 12,
+unit `piece` and no GTIN. `apply=True` writes only what the default suggests — a
+cut link — and this order has none, so it prints the same three lines. Add
+`infer=True, apply=True` and the last two lines read
+`SET_MULTIPLIED corrected  quantity    12 -> 3` and
+`MISSING_GTIN   attached   gtin        None -> 2000000000008`, and the checked
+item holds quantity 3, unit `set` and the GTIN. The full runnable version, which
+prints all three runs, is `python3 examples/grounding_example.py`.
 
 `ground()` raises `TypeError` when `extraction` is not a dict, when
 `extraction["items"]` is present but not a list, when `source_text` is not a
-str, or when `apply` is not a bool. It does not coerce a wrong type: a silent
-`{"items": []}` would report a clean result for a caller bug. A missing `items`
-key is allowed and returns an empty list.
+str, when `apply` is not a bool, or when `infer` is not a bool. It does not
+coerce a wrong type: a silent `{"items": []}` would report a clean result for a
+caller bug. A missing `items` key is allowed and returns an empty list.
 
 Inside an item, a wrong type never raises. An `other_ids` entry that is not a
 string (a dict, a list, `None`) and a blank entry are skipped by every check that
 reads `other_ids`. The entry stays in the item.
 
-### Suggest by default
+### Flag-only by default
 
-`ground()` writes nothing for three checks unless the caller asks. SET_MULTIPLIED,
-MISSING_GTIN and the quantity of an item appended for an UNCOVERED_LINK would
-write an extraction value, so with the default `apply=False` each records a
-finding with action `suggested` instead:
+`ground()` has three levels. The default proposes nothing:
 
-- `new_value` is the value `apply=True` would write;
+| Level | What happens |
+|---|---|
+| default | no check proposes an owner, a quantity or a merge. `MISSING_GTIN` and `SET_MULTIPLIED` report, `VARIANT_SPLIT` flags, and the quantity of an item appended for an `UNCOVERED_LINK` is not written. `REDACTED_LINK` suggests. |
+| `apply=True` | `REDACTED_LINK` restores the link. Nothing else changes. |
+| `infer=True` | the owner and quantity inference of `MISSING_GTIN`, `SET_MULTIPLIED`, `VARIANT_SPLIT` and the `UNCOVERED_LINK` quantity, which the release gate (`bench/gate`) does not clear. With `apply=True` it writes as before. |
+
+The default is flag-only because the release gate measures it. On the gate's
+3,448 cases the four checks proposed 427 wrong `MISSING_GTIN` owners, 35 wrong
+`UNCOVERED_LINK` quantities, 176 wrong `SET_MULTIPLIED` owners and 8 wrong
+`VARIANT_SPLIT` merges. `REDACTED_LINK` proposed 0 wrong, so it keeps its
+suggestion.
+
+What `REDACTED_LINK` suggests, and what `infer=True` suggests:
+
+- a `suggested` finding's `new_value` is the value `apply=True` would write;
 - every item keeps the value you passed in;
 - the item is still marked `uncertain: true`, because the source does not support
   the value it holds;
 - the placeholder item for an uncovered link is still appended, without a
-  quantity and without a unit, and the quantity read for that link follows as its
-  own `suggested` finding on `quantity`, directly after the `added` finding.
+  quantity and without a unit. With `infer=True` and `apply=False` the quantity
+  read for that link follows as its own `suggested` finding on `quantity`,
+  directly after the `added` finding.
 
-Pass `apply=True` and those three checks write, as `corrected`, `attached` and
-`added` with the quantity and the unit the source names. A `reported`
-MISSING_GTIN finding is the same in both modes, because neither writes anything.
-`VARIANT_SPLIT`, `REDACTED_LINK` and `UNGROUNDED_ID` behave the same in both
-modes.
+With `apply=True` a suggested link is restored, as `restored`. A suggested link
+covers its source link, so no placeholder item is appended for it. With
+`infer=True, apply=True` the four inference checks write, as `corrected`,
+`attached`, `merged` and `added` with the quantity and the unit the source names.
+A `reported` finding is the same in both modes, because neither writes anything.
 
-`apply` is keyword-only and must be a bool. `apply="yes"` and `apply=1` raise
-`TypeError`: a flag that is not a bool is a caller bug, not a mode.
+`apply` and `infer` are keyword-only and must be bools. `apply="yes"`,
+`apply=1`, `infer="yes"` and `infer=1` raise `TypeError`: a flag that is not a
+bool is a caller bug, not a mode.
 
 ### The finding contract
 
@@ -239,17 +259,18 @@ carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 | Code | What it catches | What it does |
 |---|---|---|
 | `UNGROUNDED_ID` | a `part_number` or `gtin` that does not occur in the source text on a token boundary | flags it, sets `uncertain: true`, keeps the item and the value |
-| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, unless the line's description words match exactly one other item, else one description match (`attached` with `apply=True`, `suggested` by default: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A description match counts only for an item whose own part number is not printed on another source line. A tie or no match is reported with no item (`reported`, in both modes) |
-| `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored`); the comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true` |
-| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. The quantity read for that link is written only with `apply=True` (`added`, with the source's quantity and unit); by default the item carries no quantity and no unit, and the quantity follows as a second `suggested` finding on `quantity` |
-| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line or on the line directly above it, and a stack of set lines shares one owner line (the line above the stack, else the line below it, read once for the whole stack), and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `apply=True`; `suggested` by default: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change |
-| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written. A merge that would lose a value the survivor cannot take is not made: a link that differs only in its query string, a `gtin` that is not a string, or a key the module does not know. Both lines stay and one `flagged` finding names the blocking `field` |
+| `MISSING_GTIN` | a valid GTIN in the source that no item carries. The keyword in front of it must name it (`GTIN`, `EAN`, `UPC`, `Barcode`, `Bar-Code`, `Strichcode`, `Strichcodenummer`, singular or plural, with an optional `-13`/`-8` suffix or `Nr.` label), only that run counts, and a digit run inside a link never counts | attaches it to the item the line names: the part number on the line, unless the line's description words match exactly one other item, else one description match (`attached` with `infer=True, apply=True`, `suggested` with `infer=True`: the item is marked `uncertain` and keeps its own `gtin` and `other_ids`). A description match counts only for an item whose own part number is not printed on another source line. By default every missing GTIN is reported with no item (`reported`) |
+| `REDACTED_LINK` | a product link cut in two by a redaction placeholder, e.g. `.../item/1[Telefon]234` | restores the full link when **exactly one** source link matches both the text before and the text after the cut (`restored` with `apply=True`, `suggested` by default: the item keeps its cut link and the finding names the full link). The comparison drops the query string on both sides, so an AliExpress `?spm=…` does not hide the match. Otherwise it leaves the link untouched and reports it (`flagged`); either way the item gets `uncertain: true`. A suggested link covers its source link, so no placeholder item is appended for it |
+| `UNCOVERED_LINK` | a marketplace product link that no item covers | appends an item for it, marketplace id in `other_ids`, `uncertain: true`. By default the item carries no quantity and no unit. With `infer=True` the quantity read for that link is written only with `apply=True` (`added`, with the source's quantity and unit); with `infer=True, apply=False` the item still carries no quantity and the quantity follows as a second `suggested` finding on `quantity` |
+| `SET_MULTIPLIED` | `quantity: 3 x 4` read as 12 pieces instead of 3 sets of 4. A pack marker of the same size is **required in the source text** (`4 pack`, `4-pack`, `4er-Pack`, `4er Pack`, `pack of 4`, `set of 4`), and **the set line must belong to the item**: the item sits on the set line or on the line directly above it, and a stack of set lines shares one owner line (the line above the stack, else the line below it, read once for the whole stack), and the marker sits on the set line or on the item's line. A pack word in the extractor's description is not evidence | sets quantity 3, unit `set`, `uncertain: true`, at most once per item (`corrected` with `infer=True, apply=True`; `suggested` with `infer=True`: `old_value` the quantity the item holds, `new_value` 3, quantity and unit unchanged). The evidence names the unit change. By default it reports the set line and writes nothing (`reported`, no item) |
+| `VARIANT_SPLIT` | one part number listed twice, the second line with no quantity of its own | with `infer=True` it folds the second into the first as a variant note and moves its link, gtin and other_ids onto the survivor; one `merged` finding per field written. A merge that would lose a value the survivor cannot take is not made: a link that differs only in its query string, a `gtin` that is not a string, or a key the module does not know. Both lines stay and one `flagged` finding names the blocking `field`. By default nothing is merged: both lines stay, the later one is marked `uncertain` and one `flagged` finding on `part_number` names the repeat |
 
 **Every change is reported. Nothing is deleted or rewritten silently.** The
 module never drops an item without a finding, and never rewrites a value into
 something the source does not prove — an unsupported part number is flagged, not
 repaired, because the source does not say what the right value is.
-`VARIANT_SPLIT` is the only check that removes an item; it reports `merged` and
+`VARIANT_SPLIT` is the only check that removes an item, and only with
+`infer=True`; it reports `merged` and
 keeps the part number and the variant label on the surviving item. A merge never
 loses data, and it never writes without a finding. It reports one `merged`
 finding per field it writes onto the survivor: `note`, `link`, `gtin` and

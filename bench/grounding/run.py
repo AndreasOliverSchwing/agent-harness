@@ -6,13 +6,17 @@ library only, no network, no LLM.
 
     python3 bench/grounding/run.py
 
+The synthetic bench measures `infer=True`: it scores the owner and quantity
+inference the release gate keeps opt-in, not the flag-only default.
+
 Three scores per case:
 
     caught      a finding with the code the injected error should produce,
                 on the item the case names in "expect_item", in the DEFAULT
                 mode: what a caller who passes no flag sees
     corrected   the checked output equals gold once "uncertain" and "note"
-                are removed, with apply=True: what the module writes
+                are removed, with infer=True and apply=True: what the module
+                writes
     false alarm any finding on a case that holds no error, in the default mode
 
 The scores measure the CHECKS, not an extractor. The cases are synthetic and

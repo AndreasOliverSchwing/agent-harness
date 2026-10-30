@@ -102,13 +102,16 @@ from which source line. Keep the call in the producer, where both are in hand.
 
 ```python
 import harness_grounding as g
-checked, findings = g.ground(extraction, source_text)            # suggest only
-checked, findings = g.ground(extraction, source_text, apply=True)  # write
+checked, findings = g.ground(extraction, source_text)            # flag only
+checked, findings = g.ground(extraction, source_text, apply=True)  # restore a cut link
+checked, findings = g.ground(extraction, source_text, infer=True,  # infer, then write
+                             apply=True)
 ```
 
 The arguments are checked, not guessed. `ground()` raises `TypeError` when
 `extraction` is not a dict, when `extraction["items"]` is present but not a list,
-when `source_text` is not a str, or when `apply` is not a bool. The message names
+when `source_text` is not a str, when `apply` is not a bool, or when `infer` is
+not a bool. The message names
 the argument and the type it received. Coercing a wrong type would be worse than
 the error: a bare list or a tuple of items came back as `{"items": []}` with no
 finding, and bytes as a source flagged every id. A missing `items` key stays
@@ -116,27 +119,40 @@ allowed and returns an empty list, because the data model tolerates missing keys
 `apply` is keyword-only, so a third positional argument cannot be read as a flag
 by accident.
 
-### Suggest by default
+### Flag-only by default
 
-`apply=False` is the default. Three checks would write an extraction value —
-SET_MULTIPLIED, MISSING_GTIN, and the quantity of the item appended for an
-UNCOVERED_LINK — and each writes it only with `apply=True`. With the default
-each records a finding with action `suggested`:
+`ground()` has three levels.
+
+| Level | What happens |
+|---|---|
+| default | no check proposes an owner, a quantity or a merge. MISSING_GTIN and SET_MULTIPLIED report, VARIANT_SPLIT flags, and the quantity of an item appended for an UNCOVERED_LINK is not written. REDACTED_LINK suggests. |
+| `apply=True` | REDACTED_LINK restores the link. Nothing else changes. |
+| `infer=True` | the owner and quantity inference of MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT and the UNCOVERED_LINK quantity, which the release gate (`bench/gate`) does not clear. With `apply=True` it writes as before. |
+
+The default is flag-only because the release gate measures it. On its 3,448
+cases the four checks proposed 427 wrong MISSING_GTIN owners, 35 wrong
+UNCOVERED_LINK quantities, 176 wrong SET_MULTIPLIED owners and 8 wrong
+VARIANT_SPLIT merges. REDACTED_LINK proposed 0 wrong.
+
+What a `suggested` finding promises, in both places it appears:
 
 - `new_value` is the value `apply=True` would write;
 - the item keeps the value the caller passed in, and is marked `uncertain: true`
   because the source does not support that value;
 - the item appended for an uncovered link is still appended, with `link`,
-  `other_ids` and `uncertain`, and without a quantity and without a unit. When a
-  quantity was read for the link, a second finding follows its `added` finding
-  directly: code `UNCOVERED_LINK`, action `suggested`, field `quantity`,
-  `old_value` `None`, `new_value` the quantity, `item_index` the appended item,
-  `input_index` `None`. Its evidence names the unit word `apply=True` writes.
+  `other_ids` and `uncertain`, and without a quantity and without a unit. With
+  `infer=True` and `apply=False`, when a quantity was read for the link, a second
+  finding follows its `added` finding directly: code `UNCOVERED_LINK`, action
+  `suggested`, field `quantity`, `old_value` `None`, `new_value` the quantity,
+  `item_index` the appended item, `input_index` `None`. Its evidence names the
+  unit word `apply=True` writes.
 
-`apply=True` restores the writing behaviour: `corrected`, `attached`, and `added`
-with the source's quantity and unit. A `reported` MISSING_GTIN finding is the same in
-both modes, because neither writes anything. VARIANT_SPLIT, REDACTED_LINK and
-UNGROUNDED_ID behave the same in both modes.
+`apply=True` restores a cut link, as `restored`. A suggested link covers its
+source link, so no placeholder item is appended for it. `infer=True, apply=True`
+restores the writing behaviour: `corrected`, `attached`, `merged`, and `added`
+with the source's quantity and unit. A `reported` finding is the same in both
+modes, because neither writes anything. UNGROUNDED_ID behaves the same in every
+mode.
 
 A producer that wants to gate its own output blocks on an item with `uncertain: true`,
 on a finding with action `flagged` or `reported`, or on a `suggested` finding it
@@ -577,7 +593,10 @@ Rules:
   `reported` finding names the value it is about in `evidence`.
 - `new_value` is NOT `None` for a `suggested` finding, although it writes nothing:
   it names the value `apply=True` would write. That is the whole point of the
-  action — a caller can read the value, show it, and decide.
+  action — a caller can read the value, show it, and decide. REDACTED_LINK
+  suggests by default. MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT and the
+  UNCOVERED_LINK quantity suggest only with `infer=True`; the default reports or
+  flags them instead.
 - `new_value` is also `None` for a `VARIANT_SPLIT` conflict. The survivor keeps
   its own value, so nothing is written; `old_value` is the merged line's value
   and `evidence` names the value the survivor kept.
@@ -599,10 +618,10 @@ Rules:
   follow it.
 - An appended item carries the marketplace id in `other_ids`
   (`["ASIN:B0TEST1234"]`). It never puts the id in `part_number` or
-  `description`. Its `input_index` is `None`. With the default `apply=False` it
-  carries no `quantity` and no `unit`; with `apply=True` it carries both, and the
-  unit is the one the source names: `piece` for a piece word or no unit word,
-  `set` for `set`/`sets`.
+  `description`. Its `input_index` is `None`. By default it carries no
+  `quantity` and no `unit`. With `infer=True, apply=True` it carries both, and
+  the unit is the one the source names: `piece` for a piece word or no unit
+  word, `set` for `set`/`sets`.
 - `field` is `None` when the finding is about no single item key.
 
 ## Trust boundary

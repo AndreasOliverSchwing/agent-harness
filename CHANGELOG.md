@@ -149,6 +149,34 @@ finding shape changes: read `old_value` / `new_value` instead of `value`.
   in Python 3.11+) give no quantity instead of an exception. Documented in
   `SPEC-REFERENCE.md`, "How a quantity is read".
 
+### Release gate (round 4)
+
+The fourth round of 2026-10-30 (branch `feat/grounding-checks`) is the release
+gate. A check may propose a value only when it proposes no WRONG value on a fixed
+test set.
+
+- **The gate.** `bench/gate/` holds 3,448 cases. The truth is stated by
+  construction: the generator writes each mail from a model of its positions, so
+  it knows which line belongs to which item. Mirror layouts put the same line in
+  two positions, so a rule that guesses fails one of the pair. `cases.json` is
+  pinned by digest in `bench/gate/cases.sha256`
+  (`9cdc63f743b2904207e1e2c4434a2e909f3add4eb63dae0026c1e3858eb64c4c`), and
+  `tests/test_release_gate.py` asserts the gate on every test run.
+- **The measured result on `70fb2d9`.** The gate counted these WRONG proposals:
+  MISSING_GTIN owner 427, UNCOVERED_LINK quantity 35, SET_MULTIPLIED 176,
+  VARIANT_SPLIT 8, REDACTED_LINK 0. The first four are flag-only by default, and
+  `infer=True` keeps them for measurement. They report or flag instead:
+  MISSING_GTIN and SET_MULTIPLIED `reported`, VARIANT_SPLIT `flagged`, and no
+  quantity is written for an appended item.
+- **REDACTED_LINK suggests by default and restores with `apply=True`.** It
+  proposed no wrong link, so it keeps its suggestion. A suggested link covers its
+  source link, so no placeholder item is appended for it (S8″).
+- **N2″ is fixed.** A variant line with a key that is not a string no longer
+  raises.
+- **B1″–B4″, S1″–S3″, S6″ and S7″ now live only behind `infer=True`.** The
+  inference is still there, and the bench measures it; it is not the default.
+- **S4″, S5″, S9″, S10″, N1″, N4″ and N5″ stay open.**
+
 ### Fix round 3
 
 The third review round of 2026-10-27 (branch `feat/grounding-checks`) is
