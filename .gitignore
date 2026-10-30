@@ -22,3 +22,6 @@ denylist
 internal-terms
 scripts/denylist
 scripts/internal-terms
+
+# the release gate builds its cases in memory; generate.py writes this copy for inspection only
+bench/gate/cases.json
