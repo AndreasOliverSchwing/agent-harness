@@ -127,7 +127,7 @@ by accident.
 |---|---|
 | default | no check proposes an owner, a quantity or a merge. MISSING_GTIN and SET_MULTIPLIED report, VARIANT_SPLIT flags, and the quantity of an item appended for an UNCOVERED_LINK is not written. REDACTED_LINK suggests. |
 | `apply=True` | REDACTED_LINK restores the link. Nothing else changes. |
-| `infer=True` | the owner and quantity inference of MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT and the UNCOVERED_LINK quantity, which the release gate (`bench/gate`) does not clear. With `apply=True` it writes as before. |
+| `infer=True` | the owner and quantity inference of MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT and the UNCOVERED_LINK quantity, which the release gate (`bench/gate`) does not clear. VARIANT_SPLIT merges whatever `apply` says; the other three write only with `apply=True`, as before. |
 
 The default is flag-only because the release gate measures it. On its 3,448
 cases the four checks proposed 427 wrong MISSING_GTIN owners, 35 wrong
@@ -173,8 +173,10 @@ carries, so a cut link that still holds its query string is compared as
 `https://de.aliexpress.com/item/1[Telefon]234567`. A `[` inside a query string is not
 a cut in a product path and raises no finding.
 
-- Exactly one match: the link is written back and the item gets `uncertain: true`.
-  The finding is `REDACTED_LINK` / `restored`.
+- Exactly one match: the item gets `uncertain: true`. With `apply=True` the link is
+  written back and the finding is `REDACTED_LINK` / `restored`. By default the
+  finding is `REDACTED_LINK` / `suggested`: the item keeps the cut link, and
+  `new_value` is the source link.
 - No match, or more than one: nothing is rewritten. The item keeps the cut link and
   gets `uncertain: true`. The finding is `REDACTED_LINK` / `flagged`, with the cut
   link in `old_value` and `new_value` `None`.
@@ -242,9 +244,10 @@ A supplier that prints a GTIN with no keyword gets no attachment. That is a
 deliberate loss: a wrong GTIN is worse than a missing one, because the quote then
 prices another product.
 
-The GTIN is then attached to the item the line names, as "Which item a GTIN
-belongs to" sets out below: the part number on the line decides first, and the
-description is only the fallback. That fallback needs a share of at least
+With `infer=True` the GTIN is then attached to the item the line names, as
+"Which item a GTIN belongs to" sets out below; by default it is reported with no
+item. The part number on the line decides first, and the description is only the
+fallback. That fallback needs a share of at least
 `MATCH_RATIO` (0.5) of the smaller word set. Generic words do not count
 (`part`, `item`, `quantity`, `GTIN`, `Barcode`, …), and an item whose own part
 number is printed on another source line is never a candidate for it. A line
@@ -268,6 +271,9 @@ Both GTIN checks compare the padded form:
   the number is ignored: `EAN:00200000000011` carries the GTIN.
 
 ### Which item a GTIN belongs to
+
+This is the owner rule of `infer=True`. By default every missing GTIN is reported
+with `item_index` null and nothing is written.
 
 `MISSING_GTIN` writes only to the item the GTIN's line names. The part number
 decides first, on a token boundary: a supplier line prints the part number of
@@ -360,7 +366,7 @@ the ids in that order exactly as `Industriestrasse 12` does, and no id after the
 
 A description match folds ligatures too. The words are folded with NFKC before
 they are compared, so the `Proﬁlzylinder` of a PDF is the extraction's
-`Profilzylinder`: the GTIN is attached, not reported.
+`Profilzylinder`: with `infer=True` the GTIN is attached, not reported.
 
 ### How a quantity is read
 
@@ -397,8 +403,9 @@ serves every quantity pattern, so a word that parses in a value also parses on a
 line of its own. `VE`, `Paar`, `Pack` and `kg` are not in the list: none of them
 names a count of pieces, so a quantity they follow is not read at all.
 
-An item appended for an uncovered link states the unit the source names. A piece
-word, or no unit word, is `piece`; `set` and `sets` are `set`. Any other word is
+With `infer=True`, the quantity read for an uncovered link carries the unit the
+source names; by default the appended item has neither. A piece word, or no unit
+word, is `piece`; `set` and `sets` are `set`. Any other word is
 no unit this module can name, so that link gets no quantity: nothing is suggested
 and nothing is written.
 
@@ -439,7 +446,8 @@ ignored, and a value above `10**9` is not a quantity. `10**400` raises
 
 ### A set line corrects only its own item
 
-`SET_MULTIPLIED` rewrites a quantity only when the set line belongs to that item.
+With `infer=True`, `SET_MULTIPLIED` rewrites a quantity only when the set line
+belongs to that item. By default it rewrites nothing and reports the set line.
 A set line carries a quantity label and an `N x M` pair. The labels are `Menge`,
 `Bestellmenge`, `Liefermenge`, `Anzahl`, `quantity` and `qty`, in any case, with
 an optional colon, an optional full stop (`Qty.`) and an optional packaging-unit
@@ -533,9 +541,11 @@ has one set block per line for 1,000 positions.
 
 ### A merge reports every field it writes
 
-`VARIANT_SPLIT` folds a repeated part number into the item it repeats. The
-survivor is the first item of that part number; the merged line has no quantity
-field of its own, so it is not a second position.
+With `infer=True`, `VARIANT_SPLIT` folds a repeated part number into the item it
+repeats. By default it merges nothing: both lines stay, the later one is marked
+`uncertain` and one `flagged` finding on `part_number` names it. The survivor is
+the first item of that part number; the merged line has no quantity field of its
+own, so it is not a second position.
 
 A merge writes four fields at most, and it reports each one it writes with its
 own finding: `note`, `link`, `gtin` and `other_ids`. Each finding has
@@ -608,7 +618,10 @@ Rules:
 - `item_index` and `input_index` are the same number until an item is merged
   away. `VARIANT_SPLIT` removes an item, so after a merge, every later finding can
   have `item_index` different from `input_index`, whatever its code: `item_index`
-  counts the returned list, `input_index` counts the caller's list.
+  counts the returned list, `input_index` counts the caller's list. With
+  `infer=True` a `VARIANT_SPLIT` finding names two items, merged or not:
+  `item_index` is the survivor in the returned list, `input_index` the later line
+  in the caller's list.
 - `evidence` is cut at 200 characters with `…` when the quoted line is longer.
   A hostile mail can put 100 KB on one line, and one finding may not cost the
   length of that line. Every quoted value is cut this way: the set line of a

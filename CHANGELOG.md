@@ -158,10 +158,12 @@ test set.
 - **The gate.** `bench/gate/` holds 3,448 cases. The truth is stated by
   construction: the generator writes each mail from a model of its positions, so
   it knows which line belongs to which item. Mirror layouts put the same line in
-  two positions, so a rule that guesses fails one of the pair. `cases.json` is
-  pinned by digest in `bench/gate/cases.sha256`
-  (`9cdc63f743b2904207e1e2c4434a2e909f3add4eb63dae0026c1e3858eb64c4c`), and
-  `tests/test_release_gate.py` asserts the gate on every test run.
+  two positions, so a rule that guesses fails one of the pair.
+  `bench/gate/cases.sha256` pins the digest of what `generate.build()` returns
+  (`9cdc63f743b2904207e1e2c4434a2e909f3add4eb63dae0026c1e3858eb64c4c`). The
+  cases are built in memory on every run; `cases.json` is a copy `generate.py`
+  writes for inspection and is not committed. `tests/test_release_gate.py`
+  asserts the gate on every test run.
 - **The measured result on `70fb2d9`.** The gate counted these WRONG proposals:
   MISSING_GTIN owner 427, UNCOVERED_LINK quantity 35, SET_MULTIPLIED 176,
   VARIANT_SPLIT 8, REDACTED_LINK 0. The first four are flag-only by default, and

@@ -66,14 +66,18 @@ ground() has three levels. The default writes almost nothing.
     apply=True   REDACTED_LINK restores the link. Nothing else changes.
     infer=True   the owner and quantity inference of MISSING_GTIN,
                  SET_MULTIPLIED, VARIANT_SPLIT and the UNCOVERED_LINK quantity,
-                 which the release gate (bench/gate) does not clear. With
-                 apply=True it writes as before: "attached", "corrected",
-                 "merged", and an "added" item with a quantity and a unit.
+                 which the release gate (bench/gate) does not clear.
+                 VARIANT_SPLIT merges whatever apply says, as before. The
+                 other three suggest, and with apply=True they write as
+                 before: "attached", "corrected", and an "added" item with
+                 a quantity and a unit.
 
-In every mode the item is marked uncertain when the source does not support the
-value it holds, the placeholder item for an uncovered link is appended, and a
-GTIN that no item can take is reported. A producer that shows a suggestion to a
-human calls ground() with no flag and reads the finding.
+Every item a finding names is marked uncertain, with one exception: with
+infer=True a VARIANT_SPLIT conflict marks neither line. A "reported" finding
+names no item (item_index None), so a MISSING_GTIN or SET_MULTIPLIED report
+changes no item. In every mode the placeholder item for an uncovered link is
+appended, and a GTIN that no item can take is reported. A producer that shows
+a suggestion to a human calls ground() with no flag and reads the finding.
 
 THE FINDING CONTRACT. Every finding from every check carries exactly those
 eight keys and no others. The rules, once, for all six checks:
@@ -101,11 +105,14 @@ value for some codes and the new one for others. Read old_value and new_value.
 item_index and input_index are the same number until a merge removes an item.
 VARIANT_SPLIT removes one, so after a merge every later finding can carry two
 different numbers, whatever its code. Read both; never assume they are equal.
+With infer=True a VARIANT_SPLIT finding names two items, merged or not:
+item_index is the survivor in the returned list, input_index the later line in
+the caller's list.
 
 An appended item never invents a part number or a description. A marketplace id
 belongs in other_ids, so an item added for an uncovered link carries
-other_ids ["ASIN:..."], the link and, with apply=True, the quantity and the unit.
-Nothing else.
+other_ids ["ASIN:..."], the link and, with infer=True and apply=True, the
+quantity and the unit. Nothing else.
 
 Codes and actions in this module:
 
@@ -235,14 +242,17 @@ Codes and actions in this module:
                                  cannot take. A later item repeats the part
                                  number of an earlier one and has no quantity
                                  of its own. Nothing is merged: both items are
-                                 kept, the later one is marked uncertain, and
-                                 item_index equals input_index. field is
-                                 "part_number" in the default, else the
-                                 blocking key: a link that differs in its query
+                                 kept, and new_value is None. In the default
+                                 the later item is marked uncertain, item_index
+                                 equals input_index and both name it, field is
+                                 "part_number" and old_value its part number.
+                                 With infer=True this check marks neither item,
+                                 item_index names the survivor and input_index
+                                 the line that was not merged, field is the
+                                 blocking key (a link that differs in its query
                                  string only, a gtin that is not a string, or a
-                                 key this module does not know. old_value is
-                                 the value the merge would have dropped,
-                                 new_value None.
+                                 key this module does not know) and old_value
+                                 the value the merge would have dropped.
 
 A link is a product link only when product_link_id() returns an id for it: a real
 marketplace host, and an id of the length that marketplace uses (an eBay item
@@ -992,10 +1002,11 @@ def ground(extraction, source_text, *, apply=False, infer=False):
 
     infer=True adds the owner and quantity inference the release gate
     (bench/gate) does not clear: MISSING_GTIN, SET_MULTIPLIED, VARIANT_SPLIT
-    and the UNCOVERED_LINK quantity. With apply=False each records a
-    "suggested" finding whose new_value is the value apply=True would write.
-    With apply=True it writes, as "attached", "corrected", "merged" and an
-    "added" item with a quantity and a unit.
+    and the UNCOVERED_LINK quantity. VARIANT_SPLIT merges whatever apply
+    says, as "merged". With apply=False each of the other three records a
+    "suggested" finding whose new_value is the value apply=True would write;
+    with apply=True it writes, as "attached", "corrected" and an "added" item
+    with a quantity and a unit.
 
     A wrong input type raises TypeError. Coercing it would turn a caller's bug
     into an empty, "clean" result: a bare list or a tuple of items would come
@@ -1251,11 +1262,12 @@ def _check_uncovered_links(items, origins, source_text, apply, infer, suggested=
     links belongs to the first one only. The marketplace id goes into
     other_ids: it is not a part number and not a description.
 
-    The quantity is written only with apply=True. The appended item itself is
-    written in both modes, because it holds no extraction value the caller gave
-    us: it is the record of a link the extraction missed. With apply=False it
-    carries the link, other_ids and uncertain, and the quantity follows as its
-    own "suggested" finding directly after the "added" one.
+    The quantity is proposed only with infer=True: written with apply=True,
+    else as its own "suggested" finding directly after the "added" one. The
+    appended item itself is written in every mode, because it holds no
+    extraction value the caller gave us: it is the record of a link the
+    extraction missed. Without infer=True it carries the link, other_ids and
+    uncertain, and nothing else.
 
     The links the items already cover are indexed once, in a set of id forms and
     a set of cleaned urls. Asking "does some item cover this link?" is then a
@@ -1400,11 +1412,13 @@ def _check_set_multiplied(items, origins, source_text, apply, infer):
     reports 140 pieces has lost the set, and the quote then prices 140 single
     items. The quantity is set back to the number of sets.
 
-    The write happens only with apply=True. With apply=False the finding is
-    "suggested": old_value is the quantity the item holds, new_value the number
-    of sets apply=True would write, and the item keeps its own quantity and
-    unit. The item is marked uncertain either way, because the source does not
-    support the value it holds.
+    The correction is made only with infer=True. It is written with
+    apply=True; with apply=False the finding is "suggested": old_value is the
+    quantity the item holds, new_value the number of sets apply=True would
+    write, and the item keeps its own quantity and unit. With infer=True the
+    item is marked uncertain either way, because the source does not support
+    the value it holds. Without infer=True the set line is "reported" with
+    item_index None, and no item is changed or marked.
 
     Three rules keep the correction honest. The pack size comes from the source
     text only: a pack word in the extractor's description is the extractor's
@@ -1554,7 +1568,10 @@ def _check_variant_split(items, origins, infer):
     A supplier lists one part number twice, once per variant, under one
     quantity. The later line has no quantity of its own because it is not a
     second position. It is merged into the first item as a note and removed, so
-    the quote does not count the part twice.
+    the quote does not count the part twice. The merge is made only with
+    infer=True. Without it nothing is merged: the later line is marked
+    uncertain and one "flagged" finding on part_number names it, with
+    item_index equal to input_index.
 
     "No quantity of its own" is a question about the field, not about the
     number. A line whose quantity field is non-empty is a second position even
@@ -1582,7 +1599,8 @@ def _check_variant_split(items, origins, infer):
     strings), and a key this module does not know. Both items stay, and one
     VARIANT_SPLIT finding says which value blocked the merge: action "flagged",
     field the blocking key, old_value the variant's value, new_value None,
-    because nothing was written.
+    because nothing was written. Its item_index is the survivor and its
+    input_index the variant line, and neither item is marked.
     """
     survivor_for = {}
     pairs = []
@@ -1914,11 +1932,13 @@ def _alnum_bounds(line):
 def _check_missing_gtins(items, origins, source_text, apply, infer):
     """MISSING_GTIN: attach a valid GTIN from the source that no item carries.
 
-    The attachment is written only with apply=True. With apply=False the finding
-    is "suggested": field and new_value name the key and the value apply=True
-    would write, the item is marked uncertain, and its own gtin and other_ids
-    stay exactly as the caller gave them. A GTIN that no item can take is
-    "reported" in both modes, because neither mode writes anything.
+    The attachment is made only with infer=True. It is written with
+    apply=True; with apply=False the finding is "suggested": field and
+    new_value name the key and the value apply=True would write, the item is
+    marked uncertain, and its own gtin and other_ids stay exactly as the caller
+    gave them. Without infer=True every missing GTIN is "reported" with
+    item_index None, and no item is marked. A GTIN that no item can take is
+    "reported" in every mode.
 
     The target item is the one the GTIN's line names. The part number on the
     line decides first, on a token boundary: a supplier line carries the part

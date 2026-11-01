@@ -184,7 +184,7 @@ reads `other_ids`. The entry stays in the item.
 |---|---|
 | default | no check proposes an owner, a quantity or a merge. `MISSING_GTIN` and `SET_MULTIPLIED` report, `VARIANT_SPLIT` flags, and the quantity of an item appended for an `UNCOVERED_LINK` is not written. `REDACTED_LINK` suggests. |
 | `apply=True` | `REDACTED_LINK` restores the link. Nothing else changes. |
-| `infer=True` | the owner and quantity inference of `MISSING_GTIN`, `SET_MULTIPLIED`, `VARIANT_SPLIT` and the `UNCOVERED_LINK` quantity, which the release gate (`bench/gate`) does not clear. With `apply=True` it writes as before. |
+| `infer=True` | the owner and quantity inference of `MISSING_GTIN`, `SET_MULTIPLIED`, `VARIANT_SPLIT` and the `UNCOVERED_LINK` quantity, which the release gate (`bench/gate`) does not clear. `VARIANT_SPLIT` merges whatever `apply` says; the other three write only with `apply=True`, as before. |
 
 The default is flag-only because the release gate measures it. On the gate's
 3,448 cases the four checks proposed 427 wrong `MISSING_GTIN` owners, 35 wrong
@@ -195,7 +195,7 @@ suggestion.
 What `REDACTED_LINK` suggests, and what `infer=True` suggests:
 
 - a `suggested` finding's `new_value` is the value `apply=True` would write;
-- every item keeps the value you passed in;
+- the item a `suggested` finding names keeps the value you passed in;
 - the item is still marked `uncertain: true`, because the source does not support
   the value it holds;
 - the placeholder item for an uncovered link is still appended, without a
@@ -249,7 +249,9 @@ For the list key `other_ids`, `new_value` is the entry that was added.
 away. `VARIANT_SPLIT` removes an item, so **after a merge, every later finding can
 have `item_index` different from `input_index`**, whatever its code: `item_index`
 counts the returned list, `input_index` counts the list you passed in. Read both
-and never assume they are equal.
+and never assume they are equal. With `infer=True` a `VARIANT_SPLIT` finding names
+two items, merged or not: `item_index` is the survivor in the returned list,
+`input_index` the later line in the list you passed in.
 An item this module appends for an uncovered link has `input_index: None` and
 carries the marketplace id in `other_ids` (`["ASIN:B0TEST1234"]`), never in
 `part_number` or `description`.
@@ -326,6 +328,10 @@ name", not as a recall rate on real extractor output.
 - 23 of 38 injected errors reached the gold extraction exactly; 29 of 44 cases did, counting the controls. The other 15 injected errors cannot, by design: `UNGROUNDED_ID` flags instead of repairing, and `UNCOVERED_LINK` appends a placeholder instead of restoring the link on the existing item.
 
 ### Limits
+
+Where a rule below attaches a GTIN, writes a quantity or merges a line, it does
+so only with `infer=True`. By default `MISSING_GTIN` and `SET_MULTIPLIED`
+report, `VARIANT_SPLIT` flags and an appended item carries no quantity.
 
 - **A product link needs a real marketplace host and a real id length.**
   `product_link_id()` accepts
@@ -404,7 +410,7 @@ name", not as a recall rate on real extractor output.
   the ids in that order exactly as `Industriestrasse 12` does. A description
   match folds a ligature too, because the words are folded with NFKC before they
   are compared: the `Proﬁlzylinder` of a PDF is the extraction's
-  `Profilzylinder`, so the GTIN is attached and not reported.
+  `Profilzylinder`, so with `infer=True` the GTIN is attached and not reported.
 - `UNGROUNDED_ID` never repairs a value. A human must resolve every flag.
 - `UNCOVERED_LINK` appends a second item when the position exists but lost its
   link. Treat the pair as one position; it is a prompt to look, not a merge.
@@ -464,11 +470,11 @@ name", not as a recall rate on real extractor output.
   order page) claims nothing. A blank line is layout, so nothing beyond it is
   borrowed. A link alone on its line also reads the line directly below, because
   a supplier writes the quantity under the position as often as above it. A link
-  with no quantity of its own gets none. The unit an appended item states is the
-  source's own: a piece word, or no unit word, is `piece`, `set` and `sets` are
-  `set`, and any other word (`Paar`, `VE`, `Pack`, `kg`) is not a unit this
-  module can name, so that link gets no quantity. The number pattern starts on a
-  left boundary, so `1.000.000 Stück` reads as 1000000 and
+  with no quantity of its own gets none. The unit `infer=True` gives an appended
+  item is the source's own: a piece word, or no unit word, is `piece`, `set` and
+  `sets` are `set`, and any other word (`Paar`, `VE`, `Pack`, `kg`) is not a unit
+  this module can name, so that link gets no quantity. The number pattern starts
+  on a left boundary, so `1.000.000 Stück` reads as 1000000 and
   not as its last group `000`. `"2 pcs"` and `Decimal("2")` are quantities, so
   `VARIANT_SPLIT` keeps a line that carries one. The unit words are `x`, `×`,
   `pc`, `pcs`, `piece`, `pieces`, `St.`, `Stck.`, `ST`, `Stk.`, `Stück`,
