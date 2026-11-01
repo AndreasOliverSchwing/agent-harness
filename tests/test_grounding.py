@@ -3757,7 +3757,7 @@ class FlagOnlyDefaultTest(unittest.TestCase):
     """Round 4, card 4.2: the flag-only default, and the infer=True opt-in.
 
     The release gate (bench/gate) measures four checks that propose an owner, a
-    quantity or a merge the source does not prove. On 70fb2d9 the gate counted
+    quantity or a merge the source does not prove. On 2026ab9 the gate counted
     427 wrong MISSING_GTIN owners, 35 wrong UNCOVERED_LINK quantities, 176 wrong
     SET_MULTIPLIED owners and 8 wrong VARIANT_SPLIT merges. Those four are
     flag-only by default: they report or flag, and they write nothing. The old
@@ -3874,7 +3874,7 @@ class FlagOnlyDefaultTest(unittest.TestCase):
                                  [f["code"] for f in findings])
 
     def test_infer_must_be_a_bool(self):
-        # 70fb2d9 raises TypeError too, for the unknown keyword. The message is
+        # 2026ab9 raises TypeError too, for the unknown keyword. The message is
         # what proves the flag is checked, so assert on the message.
         for bad in ("yes", 1):
             with self.subTest(infer=bad):

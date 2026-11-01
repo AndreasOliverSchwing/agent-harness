@@ -1,6 +1,6 @@
 """Permanent regression tests: the 2026-10-27 second review's inputs.
 
-The second independent review of ``harness_grounding.py`` (at ``c480471``) found
+The second independent review of ``harness_grounding.py`` (at ``f8ecaf9``) found
 2 blockers, 12 should-fix items and 6 nits: 20 inputs, each with the exact
 failing text and the result the reviewer expected. Fix round 3 fixed 19 of
 them, and cards 3.2 to 3.6 added the reviewer's own input as a test in
@@ -419,7 +419,7 @@ class ShapeCostTest(unittest.TestCase):
 
     A supplier mail is untrusted input, so a shape that takes seconds is a
     denial of service on the producer. The reviewer measured these shapes at
-    ``c480471`` and found all of them under a second. The bound is the one the
+    ``f8ecaf9`` and found all of them under a second. The bound is the one the
     rest of the suite uses.
 
     Two of them were over the bound on this branch and are fixed with the tests

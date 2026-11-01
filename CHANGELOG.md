@@ -4,10 +4,13 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
-## Unreleased
+## 0.4.0 — unreleased
 
-Fixes from the pre-release QA review of 0.3.0. No public API is removed, but the
-finding shape changes: read `old_value` / `new_value` instead of `value`.
+0.3.0 was never tagged. Its pre-release QA review, the review rounds and the
+release gate below changed the default and the finding shape before any
+release, so the release is 0.4.0. Against the 0.3.0 entry below, the default is
+flag-only (`infer=True` keeps the inference) and a finding carries `old_value` /
+`new_value` instead of `value`.
 
 ### Changed
 - **The finding contract is settled.** Every finding from all six checks has
@@ -164,7 +167,7 @@ test set.
   cases are built in memory on every run; `cases.json` is a copy `generate.py`
   writes for inspection and is not committed. `tests/test_release_gate.py`
   asserts the gate on every test run.
-- **The measured result on `70fb2d9`.** The gate counted these WRONG proposals:
+- **The measured result on `2026ab9`.** The gate counted these WRONG proposals:
   MISSING_GTIN owner 427, UNCOVERED_LINK quantity 35, SET_MULTIPLIED 176,
   VARIANT_SPLIT 8, REDACTED_LINK 0. The first four are flag-only by default, and
   `infer=True` keeps them for measurement. They report or flag instead:
@@ -187,26 +190,26 @@ below is one card of that round.
 
 Every item of the round, with the commit that fixed it, in the report's order:
 
-- B1′ — `ec14225` a marketplace id has a real length
-- B2′ — `c80f8e6` a date is never a quantity
-- S1′ — `02bc1b0` a stack of set lines corrects only the position above it
-- S2′ — `3040d7f` a set line on an unreadable quantity corrects nothing
-- S3′ — `c132f76` a line that names an item by id grounds no other by description
-- S4′ — `95b49a4` a link with a query string grounds its own line
-- S5′ — `a72c90b` only a product link with no quantity of its own claims the line below
-- S6′ — `490e85b` an uncovered link states the source's unit
-- S7′ — `a0cab6c` an id that occurs verbatim is grounded, whatever punctuation it holds
-- S8′ — `2b860da` the `Nr.` and `No.` GTIN labels are read after a space
-- S9′ — `cd7cb38` a bare GTIN line and a passing part number claim no neighbour; `4fa571e` the bare line follows the mail's layout
-- S10′ — `c6abde6` a GTIN never goes to an item whose part number is printed elsewhere
-- S11′ — `22f5d17` a merge never loses data
-- S12′ — `35a0b38` every `MISSING_GTIN` evidence starts with the GTIN
-- N1′ — `493e0da` the note finding names the note the survivor held
-- N2′ — `08c3ac2` every quoted value in an evidence is capped
-- N3′ — `7ecd112` a placeholder on the owner line takes no set correction
-- N4′ — `b60f2c4` and `5718757` tests that can fail, and guards mutation-checked; the second branch of the guard is covered by the 3.9b follow-up below
-- N5′ — `18bbab7` the line-form scan yields a form instead of holding a set
-- N6′ — `9508b8d` a PDF ligature in a description matches
+- B1′ — `42dd2b3` a marketplace id has a real length
+- B2′ — `7247364` a date is never a quantity
+- S1′ — `943830a` a stack of set lines corrects only the position above it
+- S2′ — `8282c16` a set line on an unreadable quantity corrects nothing
+- S3′ — `ea7a651` a line that names an item by id grounds no other by description
+- S4′ — `cf39b74` a link with a query string grounds its own line
+- S5′ — `fdaca8d` only a product link with no quantity of its own claims the line below
+- S6′ — `e1c3a4d` an uncovered link states the source's unit
+- S7′ — `64b5f75` an id that occurs verbatim is grounded, whatever punctuation it holds
+- S8′ — `6f095fd` the `Nr.` and `No.` GTIN labels are read after a space
+- S9′ — `0fc13ab` a bare GTIN line and a passing part number claim no neighbour; `908f91a` the bare line follows the mail's layout
+- S10′ — `2f69957` a GTIN never goes to an item whose part number is printed elsewhere
+- S11′ — `85b00ef` a merge never loses data
+- S12′ — `3e0b088` every `MISSING_GTIN` evidence starts with the GTIN
+- N1′ — `a886208` the note finding names the note the survivor held
+- N2′ — `9fef99e` every quoted value in an evidence is capped
+- N3′ — `ba5e98f` a placeholder on the owner line takes no set correction
+- N4′ — `0fb5358` and `a3ad13e` tests that can fail, and guards mutation-checked; the second branch of the guard is covered by the 3.9b follow-up below
+- N5′ — `8ef2cc9` the line-form scan yields a form instead of holding a set
+- N6′ — `d7978bc` a PDF ligature in a description matches
 
 No item of the round is open. The three `expectedFailure` tests that remain in
 `tests/test_regression_review1.py` are first-review items (S11 for two links on
@@ -517,14 +520,14 @@ this round.
   written `4500-012345`, the invented `USt-IdNr.` as `DE 123 456 789`, and two
   digit literals use `string.digits`. No assertion changed.
   `bash scripts/scan-secrets.sh --path` is clean on every file changed since
-  `c480471`. A full-repo scan still sees `4d3b143` in the history check until
+  `f8ecaf9`. A full-repo scan still sees `2c99709` in the history check until
   the release step rewrites history.
 
 - **The `words_check` branch of the `id_grounded` guard has a test that fails
   without it (3.9b, N4′ follow-up).** Card 3.9 covered the `words_any` branch,
   for a description of one or two content words. The second branch, `if index in
   id_grounded: continue` in the `words_check` loop, had no test: deleting it in a
-  scratch copy of `5718757` left the suite green.
+  scratch copy of `a3ad13e` left the suite green.
   `tests/test_regression_review2.py`
   `SecondReviewInputTest.test_a_shared_word_does_not_reach_an_item_whose_id_is_printed`
   holds the card's input. NW-22010 is grounded by description only, AC-44170 by
@@ -540,7 +543,7 @@ The bench numbers did not change in round 3. `python3 bench/grounding/run.py`
 regenerates `bench/grounding/RESULTS.md` byte for byte, so there is no bench
 commit: the three value-writing checks only suggest by default now, and the
 runner already scores `caught` in the default mode and `corrected` with
-`apply=True`, so every row and the false-alarm count read as at `c480471`.
+`apply=True`, so every row and the false-alarm count read as at `f8ecaf9`.
 
 ### Fixed in the second review round
 
@@ -621,7 +624,7 @@ ordinary German supplier mail. Each entry below is one item of that recheck.
   de-duplication of 40,000 distinct numbers (a list scan took 6.36 s; a set
   takes 0.050 s).
 
-## 0.3.0 — 2026-10-25
+## 0.3.0 — 2026-10-25 (never tagged; see 0.4.0)
 
 **A well-formed artifact can still hold data the source never said.** The linter
 checks that an artifact meets its contract. It cannot check that the values inside

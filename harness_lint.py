@@ -27,7 +27,7 @@ import re
 import sys
 import time
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 SPECS_DIR = os.path.expanduser(os.environ.get(
     "HARNESS_SPECS_DIR",
