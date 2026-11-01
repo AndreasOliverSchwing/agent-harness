@@ -4,7 +4,7 @@ Versions follow [SemVer](https://semver.org/). The spec front matter is a public
 contract: a breaking change to it means a major bump, and removed keys keep
 working as aliases for one major version rather than disappearing.
 
-## 0.4.0 — unreleased
+## 0.4.0 — 2026-11-01
 
 0.3.0 was never tagged. Its pre-release QA review, the review rounds and the
 release gate below changed the default and the finding shape before any
